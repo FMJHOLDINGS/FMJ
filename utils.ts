@@ -25,29 +25,31 @@ export const calculateMetrics = (row: ProductionRow) => {
   const unitWeight = row.unitWeight || 0;
   const qtyPerHour = row.qtyPerHour || 0;
   const cavities = Math.max(1, row.cavities || 1);
+  
+  // Rate per minute calculation
   const ratePerMin = (qtyPerHour * cavities) / 60;
 
-  // Calculate Breakdown Loss specifically
-  row.breakdowns.forEach(bd => {
-    const min = calculateTimeDiff(bd.startTime, bd.endTime);
-    bdMins += min;
-    // Specific BD loss calculation
-    const thisBdLoss = Math.floor(ratePerMin * min);
-    bdLostQty += thisBdLoss;
-  });
+  // Calculate Breakdown Loss
+  if (row.breakdowns) {
+    row.breakdowns.forEach(bd => {
+      const min = calculateTimeDiff(bd.startTime, bd.endTime);
+      bdMins += min;
+      const thisBdLoss = Math.floor(ratePerMin * min);
+      bdLostQty += thisBdLoss;
+    });
+  }
 
   const achievedQty = row.achievedQty || 0;
   const planQty = Math.floor(qtyPerHour * cavities * timeHr);
+  
   const planKg = Number(((planQty * unitWeight) / 1000).toFixed(2));
   const achievedKg = Number(((achievedQty * unitWeight) / 1000).toFixed(2));
   
   const lostQty = Math.max(0, planQty - achievedQty);
   const lostKg = Number(((lostQty * unitWeight) / 1000).toFixed(2));
 
-  // BD Lost Kg
   const bdLostKg = Number(((bdLostQty * unitWeight) / 1000).toFixed(2));
 
-  // Efficiency Loss is the remaining loss after accounting for breakdowns
   const efficiencyLossQty = Math.max(0, lostQty - bdLostQty);
   const efficiencyLossKg = Number(((efficiencyLossQty * unitWeight) / 1000).toFixed(2));
   
@@ -69,13 +71,10 @@ export const calculateMetrics = (row: ProductionRow) => {
   };
 };
 
-// --- NEW HELPERS FOR DATE RANGE ---
-
 export const getDatesInRange = (startDate: string, endDate: string): string[] => {
   const dates = [];
   const currDate = new Date(startDate);
   const lastDate = new Date(endDate);
-
   while (currDate <= lastDate) {
     dates.push(currDate.toISOString().split('T')[0]);
     currDate.setDate(currDate.getDate() + 1);
@@ -83,8 +82,65 @@ export const getDatesInRange = (startDate: string, endDate: string): string[] =>
   return dates;
 };
 
+// --- NEW HELPERS FOR REPORTS (MTD & BREAKDOWNS) ---
+
+export const getMTDData = (allData: Record<string, any>, currentDate: string, machineType: string) => {
+  const currentMonthPrefix = currentDate.substring(0, 7); // e.g. "2025-12"
+  
+  let mtdPlan = 0;
+  let mtdAchv = 0;
+  let mtdLoss = 0;
+
+  Object.values(allData).forEach((dayData: any) => {
+    // Ensure we only sum up data for the requested machine type AND current month
+    if (dayData.date && dayData.date.startsWith(currentMonthPrefix) && 
+        dayData.date <= currentDate && 
+        dayData.machineType === machineType) {
+        
+        if (dayData.rows) {
+            dayData.rows.forEach((row: any) => {
+                const m = calculateMetrics(row);
+                mtdPlan += m.planKg;
+                mtdAchv += m.achievedKg;
+                mtdLoss += m.lostKg;
+            });
+        }
+    }
+  });
+
+  return { mtdPlan, mtdAchv, mtdLoss };
+};
+
+export const getBreakdownSummary = (rows: any[]) => {
+  const grouped: Record<string, any[]> = {};
+  
+  rows.forEach(row => {
+    if (row.breakdowns) {
+        row.breakdowns.forEach((bd: any) => {
+          if (!grouped[bd.category]) grouped[bd.category] = [];
+          
+          // Re-calculate breakdown specific loss
+          const ratePerMin = ((row.qtyPerHour || 0) * (row.cavities || 1)) / 60;
+          const mins = calculateTimeDiff(bd.startTime, bd.endTime);
+          const lossQty = Math.floor(ratePerMin * mins);
+          const lossKg = (lossQty * (row.unitWeight || 0)) / 1000;
+
+          grouped[bd.category].push({
+            ...bd,
+            shift: row.shift,
+            machine: row.machine,
+            product: row.product,
+            mins,
+            lossKg
+          });
+        });
+    }
+  });
+
+  return grouped;
+};
+
 export const exportToCSV = (dayData: DayData) => {
-  // Existing export logic (keep as is or update if needed)
   const headers = [
     'Shift', 'Start', 'End', 'Machine', 'Product', 'Unit Wt', 'Qty/Hr', 'Cavities', 
     'Time Hr', 'Plan Qty', 'Achieved Qty', 'Plan Kg', 'Achieved Kg', 'Lost Qty', 'BD Minutes', 'Efficiency %'

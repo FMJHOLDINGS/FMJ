@@ -1,101 +1,108 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Factory, LayoutDashboard, Activity, Calendar, ChevronRight, 
-  TrendingUp, Cloud, Download, ShieldCheck, HardDrive, 
-  RefreshCw, Settings as SettingsIcon, Database, CheckCircle2, 
-  XCircle, CloudUpload, UserCog
+  TrendingUp, CloudUpload, UserCog, Settings as SettingsIcon, 
+  Database, Sun, Moon 
 } from 'lucide-react';
-import { AppTab, MachineType, DayData, AdminConfig } from './types';
+import { AppTab, DayData, AdminConfig } from './types';
 import ProductionTab from './components/ProductionTab';
 import KPITab from './components/KPITab';
 import OEETab from './components/OEETab';
 import AdminTab from './components/AdminTab';
 
+// Firebase Imports
+import { db } from './firebase';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.PRODUCTION);
+  // This state is just an initial value now, managed inside ProductionTab
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [allData, setAllData] = useState<Record<string, any>>({});
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
-  // Cloud Config
-  const [binId, setBinId] = useState(localStorage.getItem('jsonbin_id') || '');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('jsonbin_key') || '');
+  const [allData, setAllData] = useState<Record<string, any>>(() => {
+    const saved = localStorage.getItem('fmj_pro_db_v2');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  // Dark Mode State Logic
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+  
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [cloudStatus, setCloudStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Initial Load from Local Storage and Cloud
+  const docRef = useMemo(() => doc(db, "data", "main_dashboard"), []);
+
   useEffect(() => {
-    const savedLocal = localStorage.getItem('fmj_pro_json_db');
-    if (savedLocal) {
-      try {
-        setAllData(JSON.parse(savedLocal));
-      } catch (e) { console.error("Local parse error"); }
-    }
-    if (binId && apiKey) fetchFromCloud();
-  }, []);
-
-  const fetchFromCloud = async () => {
-    if (!binId || !apiKey) return;
     setCloudStatus('syncing');
-    try {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-        headers: { 'X-Master-Key': apiKey }
-      });
-      if (!res.ok) throw new Error();
-      const result = await res.json();
-      const cloudData = result.record.entries || result.record;
-      setAllData(cloudData);
-      localStorage.setItem('fmj_pro_json_db', JSON.stringify(cloudData));
-      setCloudStatus('success');
-      setHasUnsavedChanges(false);
-      setTimeout(() => setCloudStatus('idle'), 3000);
-    } catch (e) { setCloudStatus('error'); }
-  };
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data().entries || {};
+        setAllData(cloudData);
+        localStorage.setItem('fmj_pro_db_v2', JSON.stringify(cloudData));
+        setCloudStatus('success');
+        setTimeout(() => setCloudStatus('idle'), 2000);
+      }
+    }, (error) => {
+      console.error("Firebase Sync Error:", error);
+      setCloudStatus('error');
+    });
 
-  const syncToCloud = async () => {
-    if (!binId || !apiKey) return;
-    setCloudStatus('syncing');
-    try {
-      await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey },
-        body: JSON.stringify({ entries: allData, last_sync: new Date().toISOString() })
-      });
-      setCloudStatus('success');
-      setHasUnsavedChanges(false);
-      setTimeout(() => setCloudStatus('idle'), 3000);
-    } catch (e) { setCloudStatus('error'); }
-  };
+    return () => unsubscribe();
+  }, [docRef]);
 
-  // Sync state to local storage when allData changes
   useEffect(() => {
-    if (Object.keys(allData).length > 0) {
-      localStorage.setItem('fmj_pro_json_db', JSON.stringify(allData));
-      if (cloudStatus !== 'syncing') setHasUnsavedChanges(true);
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
-  }, [allData]);
+  }, [isDarkMode]);
+
+  const saveData = useCallback(async (updatedData: any) => {
+    setAllData(updatedData);
+    localStorage.setItem('fmj_pro_db_v2', JSON.stringify(updatedData));
+    
+    try {
+      setCloudStatus('syncing');
+      await setDoc(docRef, { 
+        entries: updatedData, 
+        last_sync: new Date().toISOString() 
+      }, { merge: true });
+      setCloudStatus('success');
+      setTimeout(() => setCloudStatus('idle'), 2000);
+    } catch (e) {
+      console.error("Cloud Save Error:", e);
+      setCloudStatus('error');
+    }
+  }, [docRef]);
 
   const adminConfig: AdminConfig = useMemo(() => {
     return allData.adminConfig || { machineMappings: [] };
   }, [allData]);
 
   const updateAdminConfig = (newConfig: AdminConfig) => {
-    setAllData(prev => ({ ...prev, adminConfig: newConfig }));
+    const updatedData = { ...allData, adminConfig: newConfig };
+    saveData(updatedData);
   };
 
   const updateDayData = (key: string, newData: DayData) => {
-    setAllData(prev => ({ ...prev, [key]: newData }));
+    const updatedData = { ...allData, [key]: newData };
+    saveData(updatedData);
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#F8FAFC] overflow-hidden">
+    <div className="flex h-screen w-full bg-[#F8FAFC] dark:bg-[#020617] text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
       {/* Sidebar */}
-      <aside className={`bg-[#0F172A] text-slate-400 transition-all duration-300 flex flex-col z-50 shadow-2xl ${isSidebarOpen ? 'w-72' : 'w-20'}`}>
-        <div className="h-20 flex items-center px-6 border-b border-slate-800/50 gap-4 overflow-hidden">
+      <aside className={`bg-[#0F172A] border-r border-slate-800 text-slate-400 transition-all duration-300 flex flex-col z-50 shadow-2xl ${isSidebarOpen ? 'w-72' : 'w-20'}`}>
+        <div className="h-20 flex items-center px-6 border-b border-slate-800 gap-4 overflow-hidden">
           <div className="bg-indigo-600 p-2 rounded-xl flex-shrink-0"><Factory className="w-6 h-6 text-white" /></div>
-          {isSidebarOpen && <div className="flex flex-col"><span className="text-white font-black">FMJ PRO</span><span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">{binId ? 'Cloud Sync' : 'Offline'}</span></div>}
+          {isSidebarOpen && <div className="flex flex-col"><span className="text-white font-black">FMJ PRO</span><span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Hybrid Sync</span></div>}
         </div>
 
         <nav className="flex-1 px-3 py-8 space-y-2">
@@ -104,21 +111,18 @@ const App: React.FC = () => {
           <NavItem icon={<Activity />} label="Efficiency" active={activeTab === AppTab.OEE} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.OEE)} />
           <NavItem icon={<UserCog />} label="Admin Panel" active={activeTab === AppTab.ADMIN} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.ADMIN)} />
           
-          <div className="pt-8 border-t border-slate-800/30 mt-4 px-3">
-            {binId && (
-              <button onClick={syncToCloud} disabled={cloudStatus === 'syncing'} className={`w-full flex items-center gap-4 py-3 px-3 rounded-xl transition-all relative ${hasUnsavedChanges ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30' : 'hover:bg-slate-800'}`}>
-                <CloudUpload className={cloudStatus === 'syncing' ? 'animate-spin' : ''} />
-                {isSidebarOpen && <span className="font-bold text-sm">Sync Now</span>}
-                {hasUnsavedChanges && isSidebarOpen && <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>}
-              </button>
-            )}
+          <div className="pt-8 border-t border-slate-800 mt-4 px-3">
+            <div className={`flex items-center gap-4 py-3 px-3 rounded-xl transition-all ${cloudStatus === 'syncing' ? 'text-indigo-400' : cloudStatus === 'success' ? 'text-emerald-400' : 'text-slate-500'}`}>
+              <CloudUpload className={cloudStatus === 'syncing' ? 'animate-spin' : ''} />
+              {isSidebarOpen && <span className="font-bold text-xs uppercase tracking-widest">{cloudStatus === 'syncing' ? 'Syncing...' : 'Cloud Active'}</span>}
+            </div>
             <button onClick={() => setIsConfigModalOpen(true)} className="w-full flex items-center gap-4 py-3 px-3 mt-2 rounded-xl hover:bg-slate-800 text-slate-400">
-              <SettingsIcon /><>{isSidebarOpen && <span className="font-bold text-sm">Cloud Setup</span>}</>
+              <SettingsIcon /><>{isSidebarOpen && <span className="font-bold text-sm text-left">Sync Settings</span>}</>
             </button>
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800/50">
+        <div className="p-4 border-t border-slate-800">
            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full p-3 rounded-xl hover:bg-slate-800 transition-all flex justify-center">
              <ChevronRight className={`transition-transform ${isSidebarOpen ? 'rotate-180' : ''}`} />
            </button>
@@ -127,26 +131,38 @@ const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-10">
+        <header className="h-20 bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-10 transition-colors duration-300">
           <div className="flex items-center gap-4">
-             <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">{activeTab}</h1>
-             <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
-                <Calendar className="w-4 h-4 text-indigo-600" />
-                <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-xs font-black text-indigo-800 outline-none" />
-             </div>
+             <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">{activeTab}</h1>
+             
+             {/* --- OLD DATE PICKER REMOVED FROM HERE --- */}
+             {/* It is now inside ProductionTab.tsx */}
+
           </div>
-          <div className="flex items-center gap-3">
-             <div className="text-right">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Mode</p>
-                <p className="text-xs font-bold text-slate-800">{binId ? 'Cloud Syncing' : 'Local Only'}</p>
-             </div>
-             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${binId ? 'bg-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-slate-400'}`}>
-                <ShieldCheck />
+          
+          {/* Dark Mode Toggle Switch */}
+          <div className="flex items-center gap-6">
+             <div className="flex items-center gap-3">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 hidden md:block">
+                  {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+                </span>
+                <button 
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 flex items-center relative shadow-inner ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                >
+                   <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center absolute ${isDarkMode ? 'translate-x-[26px]' : 'translate-x-0'}`}>
+                      {isDarkMode ? (
+                        <Moon className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                      )}
+                   </div>
+                </button>
              </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto bg-[#F8FAFC]">
+        <div className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#020617] transition-colors duration-300">
           {activeTab === AppTab.PRODUCTION && (
             <ProductionTab date={selectedDate} allData={allData} onUpdate={updateDayData} adminConfig={adminConfig} />
           )}
@@ -156,26 +172,57 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Cloud Config Modal */}
+      {/* Sync Info Modal - Fully Dynamic */}
       {isConfigModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md">
-           <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden border border-slate-200 animate-fade-in">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md transition-all">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fade-in relative">
               <div className="p-8 bg-[#0F172A] text-white flex items-center gap-4">
-                <Database className="w-8 h-8 text-indigo-400" />
-                <div><h3 className="text-xl font-black uppercase tracking-tight">Cloud Settings</h3><p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">JSONBin.io Integration</p></div>
+                <Database className={`w-8 h-8 ${cloudStatus === 'syncing' ? 'text-amber-400 animate-pulse' : cloudStatus === 'error' ? 'text-rose-500' : 'text-emerald-400'}`} />
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Sync Status</h3>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Real-time Hybrid Engine</p>
+                </div>
               </div>
+
               <div className="p-8 space-y-4">
-                 <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bin ID</label>
-                    <input type="text" value={binId} onChange={(e) => setBinId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold mt-1" />
+                 <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 p-4 rounded-2xl flex items-start gap-3">
+                    <div className="p-1 bg-emerald-100 dark:bg-emerald-800 rounded-full mt-0.5"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div></div>
+                    <div>
+                      <p className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-wide">Local Storage: Active</p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-500/70 mt-1 font-medium">Data is stored securely on this device.</p>
+                    </div>
                  </div>
-                 <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Master API Key</label>
-                    <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold mt-1" />
+
+                 <div className={`p-4 rounded-2xl border flex items-start gap-3 transition-colors duration-500 ${
+                    cloudStatus === 'error' 
+                      ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800' 
+                      : cloudStatus === 'syncing' 
+                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800'
+                        : 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800'
+                 }`}>
+                    <div className={`p-1 rounded-full mt-0.5 ${
+                        cloudStatus === 'error' ? 'bg-rose-100 dark:bg-rose-800' : cloudStatus === 'syncing' ? 'bg-amber-100 dark:bg-amber-800' : 'bg-indigo-100 dark:bg-indigo-800'
+                    }`}>
+                      <div className={`w-2 h-2 rounded-full ${
+                          cloudStatus === 'error' ? 'bg-rose-500' : cloudStatus === 'syncing' ? 'bg-amber-500 animate-ping' : 'bg-indigo-500'
+                      }`}></div>
+                    </div>
+                    <div>
+                      <p className={`text-xs font-black uppercase tracking-wide ${
+                          cloudStatus === 'error' ? 'text-rose-800 dark:text-rose-400' : cloudStatus === 'syncing' ? 'text-amber-800 dark:text-amber-400' : 'text-indigo-800 dark:text-indigo-400'
+                      }`}>
+                         {cloudStatus === 'error' ? 'Cloud Sync: Disconnected' : cloudStatus === 'syncing' ? 'Cloud Sync: Syncing...' : 'Cloud Sync: Connected'}
+                      </p>
+                      <p className={`text-[10px] mt-1 font-medium ${
+                          cloudStatus === 'error' ? 'text-rose-600 dark:text-rose-400/70' : cloudStatus === 'syncing' ? 'text-amber-600 dark:text-amber-400/70' : 'text-indigo-600 dark:text-indigo-400/70'
+                      }`}>
+                         {cloudStatus === 'error' ? 'Check your internet connection.' : 'Data is automatically backing up to Firebase.'}
+                      </p>
+                    </div>
                  </div>
+
                  <div className="flex gap-3 pt-4">
-                   <button onClick={() => setIsConfigModalOpen(false)} className="flex-1 bg-slate-100 py-3 rounded-xl font-black uppercase text-xs text-slate-600">Cancel</button>
-                   <button onClick={() => { localStorage.setItem('jsonbin_id', binId); localStorage.setItem('jsonbin_key', apiKey); setIsConfigModalOpen(false); fetchFromCloud(); }} className="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs shadow-lg shadow-indigo-600/20">Connect & Sync</button>
+                   <button onClick={() => setIsConfigModalOpen(false)} className="w-full bg-slate-900 dark:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase text-xs hover:bg-black transition-all shadow-lg">Close Monitor</button>
                  </div>
               </div>
            </div>

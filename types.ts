@@ -52,3 +52,13 @@ export enum AppTab {
   OEE = 'efficiency',
   ADMIN = 'admin'
 }
+
+export interface DayData {
+  id: string; // YYYY-MM-DD_TYPE
+  date: string;
+  machineType: MachineType;
+  // NEW SUPERVISOR FIELDS
+  daySupervisor?: string;
+  nightSupervisor?: string;
+  rows: ProductionRow[];
+}
