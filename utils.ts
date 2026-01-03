@@ -1,4 +1,6 @@
 import { ProductionRow, DayData } from './types';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 export const parseMinutes = (timeStr: string): number | null => {
   if (!timeStr || !timeStr.includes(':')) return null;
@@ -21,11 +23,11 @@ export const calculateMetrics = (row: ProductionRow) => {
 
   let bdMins = 0;
   let bdLostQty = 0;
-  
+
   const unitWeight = row.unitWeight || 0;
   const qtyPerHour = row.qtyPerHour || 0;
   const cavities = Math.max(1, row.cavities || 1);
-  
+
   // Rate per minute calculation
   const ratePerMin = (qtyPerHour * cavities) / 60;
 
@@ -41,10 +43,10 @@ export const calculateMetrics = (row: ProductionRow) => {
 
   const achievedQty = row.achievedQty || 0;
   const planQty = Math.floor(qtyPerHour * cavities * timeHr);
-  
+
   const planKg = Number(((planQty * unitWeight) / 1000).toFixed(2));
   const achievedKg = Number(((achievedQty * unitWeight) / 1000).toFixed(2));
-  
+
   const lostQty = Math.max(0, planQty - achievedQty);
   const lostKg = Number(((lostQty * unitWeight) / 1000).toFixed(2));
 
@@ -52,7 +54,7 @@ export const calculateMetrics = (row: ProductionRow) => {
 
   const efficiencyLossQty = Math.max(0, lostQty - bdLostQty);
   const efficiencyLossKg = Number(((efficiencyLossQty * unitWeight) / 1000).toFixed(2));
-  
+
   const efficiency = planQty > 0 ? (achievedQty / planQty) * 100 : 0;
 
   return {
@@ -86,25 +88,25 @@ export const getDatesInRange = (startDate: string, endDate: string): string[] =>
 
 export const getMTDData = (allData: Record<string, any>, currentDate: string, machineType: string) => {
   const currentMonthPrefix = currentDate.substring(0, 7); // e.g. "2025-12"
-  
+
   let mtdPlan = 0;
   let mtdAchv = 0;
   let mtdLoss = 0;
 
   Object.values(allData).forEach((dayData: any) => {
     // Ensure we only sum up data for the requested machine type AND current month
-    if (dayData.date && dayData.date.startsWith(currentMonthPrefix) && 
-        dayData.date <= currentDate && 
-        dayData.machineType === machineType) {
-        
-        if (dayData.rows) {
-            dayData.rows.forEach((row: any) => {
-                const m = calculateMetrics(row);
-                mtdPlan += m.planKg;
-                mtdAchv += m.achievedKg;
-                mtdLoss += m.lostKg;
-            });
-        }
+    if (dayData.date && dayData.date.startsWith(currentMonthPrefix) &&
+      dayData.date <= currentDate &&
+      dayData.machineType === machineType) {
+
+      if (dayData.rows) {
+        dayData.rows.forEach((row: any) => {
+          const m = calculateMetrics(row);
+          mtdPlan += m.planKg;
+          mtdAchv += m.achievedKg;
+          mtdLoss += m.lostKg;
+        });
+      }
     }
   });
 
@@ -113,27 +115,27 @@ export const getMTDData = (allData: Record<string, any>, currentDate: string, ma
 
 export const getBreakdownSummary = (rows: any[]) => {
   const grouped: Record<string, any[]> = {};
-  
+
   rows.forEach(row => {
     if (row.breakdowns) {
-        row.breakdowns.forEach((bd: any) => {
-          if (!grouped[bd.category]) grouped[bd.category] = [];
-          
-          // Re-calculate breakdown specific loss
-          const ratePerMin = ((row.qtyPerHour || 0) * (row.cavities || 1)) / 60;
-          const mins = calculateTimeDiff(bd.startTime, bd.endTime);
-          const lossQty = Math.floor(ratePerMin * mins);
-          const lossKg = (lossQty * (row.unitWeight || 0)) / 1000;
+      row.breakdowns.forEach((bd: any) => {
+        if (!grouped[bd.category]) grouped[bd.category] = [];
 
-          grouped[bd.category].push({
-            ...bd,
-            shift: row.shift,
-            machine: row.machine,
-            product: row.product,
-            mins,
-            lossKg
-          });
+        // Re-calculate breakdown specific loss
+        const ratePerMin = ((row.qtyPerHour || 0) * (row.cavities || 1)) / 60;
+        const mins = calculateTimeDiff(bd.startTime, bd.endTime);
+        const lossQty = Math.floor(ratePerMin * mins);
+        const lossKg = (lossQty * (row.unitWeight || 0)) / 1000;
+
+        grouped[bd.category].push({
+          ...bd,
+          shift: row.shift,
+          machine: row.machine,
+          product: row.product,
+          mins,
+          lossKg
         });
+      });
     }
   });
 
@@ -142,15 +144,15 @@ export const getBreakdownSummary = (rows: any[]) => {
 
 export const exportToCSV = (dayData: DayData) => {
   const headers = [
-    'Shift', 'Start', 'End', 'Machine', 'Product', 'Unit Wt', 'Qty/Hr', 'Cavities', 
+    'Shift', 'Start', 'End', 'Machine', 'Product', 'Unit Wt', 'Qty/Hr', 'Cavities',
     'Time Hr', 'Plan Qty', 'Achieved Qty', 'Plan Kg', 'Achieved Kg', 'Lost Qty', 'BD Minutes', 'Efficiency %'
   ];
 
   const rows = dayData.rows.map(row => {
     const m = calculateMetrics(row);
     return [
-      row.shift, row.startTime, row.endTime, row.machine, row.product, row.unitWeight, 
-      row.qtyPerHour, row.cavities, m.timeHr, m.planQty, row.achievedQty, m.planKg, 
+      row.shift, row.startTime, row.endTime, row.machine, row.product, row.unitWeight,
+      row.qtyPerHour, row.cavities, m.timeHr, m.planQty, row.achievedQty, m.planKg,
       m.achievedKg, m.lostQty, m.bdMins, m.efficiency.toFixed(1)
     ];
   });
@@ -165,4 +167,109 @@ export const exportToCSV = (dayData: DayData) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+export const exportToExcel = async (
+  rows: ProductionRow[],
+  filters: { machine: string[], product: string[], startDate: string, endDate: string, type: string }
+) => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Production Report');
+
+  // Set Column Widths
+  worksheet.columns = [
+    { header: 'Date', key: 'date', width: 12 },
+    { header: 'Shift', key: 'shift', width: 8 },
+    { header: 'Machine', key: 'machine', width: 15 },
+    { header: 'Product', key: 'product', width: 30 },
+    { header: 'Wt (g)', key: 'wt', width: 10 },
+    { header: 'Plan Qty', key: 'planQty', width: 12 },
+    { header: 'Achv Qty', key: 'achvQty', width: 12 },
+    { header: 'Plan Kg', key: 'planKg', width: 12 },
+    { header: 'Achv Kg', key: 'achvKg', width: 12 },
+    { header: 'Lost Qty', key: 'lostQty', width: 12 },
+    { header: 'Lost Kg', key: 'lostKg', width: 12 },
+  ];
+
+  // Styling Constants
+  const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Slate 800
+  const headerFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true, size: 11 };
+  const border: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+  };
+
+  // Add Header Row
+  const headerRow = worksheet.getRow(1);
+  headerRow.values = [
+    'Date', 'Shift', 'Machine', 'Product', 'Wt(g)',
+    'Plan Qty', 'Achv Qty', 'Plan Kg', 'Achv Kg', 'Lost Qty', 'Lost Kg'
+  ];
+
+  headerRow.eachCell((cell) => {
+    cell.fill = headerFill;
+    cell.font = headerFont;
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = border;
+  });
+  headerRow.height = 25;
+
+  let totalPlanKg = 0;
+  let totalAchvKg = 0;
+  let totalLostKg = 0;
+
+  rows.forEach((row, index) => {
+    const m = calculateMetrics(row);
+
+    totalPlanKg += m.planKg;
+    totalAchvKg += m.achievedKg;
+    totalLostKg += m.lostKg;
+
+    const r = worksheet.addRow([
+      (row as any).date || '',
+      row.shift.toUpperCase(),
+      row.machine,
+      row.product,
+      row.unitWeight,
+      m.planQty,
+      row.achievedQty,
+      m.planKg,
+      m.achievedKg,
+      m.lostQty,
+      m.lostKg
+    ]);
+
+    // Row Styling
+    r.height = 20;
+    r.eachCell((cell, colNumber) => {
+      cell.border = border;
+      cell.alignment = { vertical: 'middle', horizontal: colNumber <= 4 ? 'left' : 'right' };
+      if (colNumber > 4) cell.numFmt = '#,##0.0'; // Number format
+      if (colNumber === 2) { // Shift
+        cell.font = { color: { argb: row.shift === 'day' ? 'FFD97706' : 'FF4F46E5' }, bold: true };
+      }
+    });
+  });
+
+  // Add Total Row
+  const totalRow = worksheet.addRow([
+    'TOTAL', '', '', '', '',
+    '', '', totalPlanKg, totalAchvKg, '', totalLostKg
+  ]);
+  totalRow.height = 30;
+  totalRow.eachCell((cell, colNumber) => {
+    cell.font = { bold: true, size: 12 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    cell.border = { top: { style: 'medium' }, bottom: { style: 'medium' } };
+    cell.alignment = { vertical: 'middle', horizontal: colNumber <= 4 ? 'left' : 'right' };
+    if (colNumber > 4) cell.numFmt = '#,##0.0';
+  });
+
+  worksheet.mergeCells(`A${totalRow.number}:E${totalRow.number}`);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, `Production_Report_${filters.type}_${filters.startDate}_to_${filters.endDate}.xlsx`);
 };

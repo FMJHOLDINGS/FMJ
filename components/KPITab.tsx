@@ -2,17 +2,17 @@
 import React, { useMemo } from 'react';
 import { DayData } from '../types';
 import { calculateMetrics } from '../utils';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  LineChart, 
-  Line, 
-  AreaChart, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
   Area,
   PieChart,
   Pie,
@@ -28,6 +28,7 @@ const KPITab: React.FC<Props> = ({ data }) => {
   const chartData = useMemo(() => {
     // Fix: Explicitly cast to DayData[] to avoid "unknown" type errors in subsequent operations
     return (Object.values(data) as DayData[])
+      .filter(d => d && d.date) // Safety check for valid data
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-10) // Last 10 days
       .map(day => {
@@ -77,9 +78,9 @@ const KPITab: React.FC<Props> = ({ data }) => {
           <ResponsiveContainer width="100%" height="85%">
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="date" fontSize={10} tick={{fill: '#94a3b8'}} />
-              <YAxis fontSize={10} tick={{fill: '#94a3b8'}} />
-              <Tooltip 
+              <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <YAxis fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <Tooltip
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                 itemStyle={{ fontWeight: 'bold' }}
               />
@@ -95,13 +96,13 @@ const KPITab: React.FC<Props> = ({ data }) => {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="colorEff" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="date" fontSize={10} tick={{fill: '#94a3b8'}} />
-              <YAxis fontSize={10} tick={{fill: '#94a3b8'}} />
+              <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <YAxis fontSize={10} tick={{ fill: '#94a3b8' }} />
               <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
               <Area type="monotone" dataKey="efficiency" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorEff)" name="Efficiency %" />
             </AreaChart>

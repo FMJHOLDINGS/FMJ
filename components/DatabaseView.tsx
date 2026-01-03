@@ -1,190 +1,273 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ProductionRow } from '../types';
 import { calculateMetrics, getDatesInRange } from '../utils';
-import { Database, User } from 'lucide-react';
+import { Database, User, ChevronDown, ChevronUp, Calendar, Zap, AlertTriangle, Layers, Clock } from 'lucide-react';
 
 interface Props {
-  startDate: string;
-  endDate: string;
-  machineType: 'IM' | 'BM';
-  allData: Record<string, any>;
+   startDate: string;
+   endDate: string;
+   machineType: 'IM' | 'BM';
+   allData: Record<string, any>;
+   machineFilter: string[];
+   productFilter: string[];
 }
 
-const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allData }) => {
-  
-  const reportData = useMemo(() => {
-    const dates = getDatesInRange(startDate, endDate);
-    
-    const grouped = dates.map(date => {
-      const key = `${date}_${machineType}`;
-      const dayData = allData[key];
-      const rows: ProductionRow[] = dayData ? dayData.rows : [];
-      const supervisors = { day: dayData?.daySupervisor || '-', night: dayData?.nightSupervisor || '-' };
-      
-      rows.sort((a, b) => {
-         if (a.shift !== b.shift) return a.shift === 'day' ? -1 : 1;
-         return a.startTime.localeCompare(b.startTime);
-      });
+const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allData, machineFilter, productFilter }) => {
+   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
-      const subTotal = rows.reduce((acc, row) => {
-         const m = calculateMetrics(row);
-         return {
-            planQty: acc.planQty + m.planQty,
-            achvQty: acc.achvQty + row.achievedQty,
-            planKg: acc.planKg + m.planKg,
-            achvKg: acc.achvKg + m.achievedKg,
-            lostQty: acc.lostQty + m.lostQty,
-            lostKg: acc.lostKg + m.lostKg,
-            bdLostKg: acc.bdLostKg + m.bdLostKg,
-            effLostKg: acc.effLostKg + m.efficiencyLossKg,
-         };
-      }, { planQty: 0, achvQty: 0, planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 });
+   const reportData = useMemo(() => {
+      const dates = getDatesInRange(startDate, endDate);
 
-      return { date, rows, subTotal, supervisors };
-    }).filter(group => group.rows.length > 0);
+      const grouped = dates.map(date => {
+         const key = `${date}_${machineType}`;
+         const dayData = allData[key];
+         const rows: ProductionRow[] = dayData ? dayData.rows : [];
+         const supervisors = { day: dayData?.daySupervisor || '-', night: dayData?.nightSupervisor || '-' };
 
-    return grouped;
-  }, [startDate, endDate, machineType, allData]);
+         rows.sort((a, b) => {
+            if (a.shift !== b.shift) return a.shift === 'day' ? -1 : 1;
+            return a.startTime.localeCompare(b.startTime);
+         });
 
-  const grandTotal = reportData.reduce((acc, group) => {
-     return {
-        planQty: acc.planQty + group.subTotal.planQty,
-        achvQty: acc.achvQty + group.subTotal.achvQty,
-        planKg: acc.planKg + group.subTotal.planKg,
-        achvKg: acc.achvKg + group.subTotal.achvKg,
-        lostQty: acc.lostQty + group.subTotal.lostQty,
-        lostKg: acc.lostKg + group.subTotal.lostKg,
-        bdLostKg: acc.bdLostKg + group.subTotal.bdLostKg,
-        effLostKg: acc.effLostKg + group.subTotal.effLostKg,
-     };
-  }, { planQty: 0, achvQty: 0, planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 });
+         // Filter rows
+         const filteredRows = rows.filter(row => {
+            if (machineFilter.length > 0 && !machineFilter.includes(row.machine)) return false;
+            if (productFilter.length > 0 && !productFilter.includes(row.product)) return false;
+            return true;
+         });
 
-  if (reportData.length === 0) {
-     return (
-        <div className="p-12 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col items-center">
-           <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-400 mb-4"><Database className="w-8 h-8"/></div>
-           <h3 className="text-lg font-black text-slate-700 dark:text-slate-300">No Records Found</h3>
-           <p className="text-slate-400 dark:text-slate-500 text-sm">Adjust the date range to view production logs.</p>
-        </div>
-     );
-  }
+         const subTotal = filteredRows.reduce((acc, row) => {
+            const m = calculateMetrics(row);
+            return {
+               planQty: acc.planQty + m.planQty,
+               achvQty: acc.achvQty + row.achievedQty,
+               planKg: acc.planKg + m.planKg,
+               achvKg: acc.achvKg + m.achievedKg,
+               lostQty: acc.lostQty + m.lostQty,
+               lostKg: acc.lostKg + m.lostKg,
+               bdLostKg: acc.bdLostKg + m.bdLostKg,
+               effLostKg: acc.effLostKg + m.efficiencyLossKg,
+            };
+         }, { planQty: 0, achvQty: 0, planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 });
 
-  return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] shadow-xl shadow-slate-200/40 dark:shadow-black/40 overflow-hidden">
-       <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left text-[11px] min-w-[2000px] border-collapse">
-             <thead>
-                <tr className="bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest text-center h-12">
-                   <th className="w-24 border-r border-slate-700">Date</th>
-                   <th className="w-16">Shift</th>
-                   <th className="w-24 text-indigo-300 bg-slate-700/50">Supervisor</th> {/* New Col */}
-                   <th className="w-32">Machine</th>
-                   <th className="w-64 text-left pl-4">Product</th>
-                   <th className="w-16">Wt(g)</th>
-                   <th className="w-16">Qty/Hr</th>
-                   <th className="w-16">Cav</th>
-                   <th className="w-16 text-emerald-300">Time</th>
-                   
-                   <th className="w-24 bg-slate-700/50">Plan Qty</th>
-                   <th className="w-24 bg-slate-700/50 text-emerald-400">Achv Qty</th>
-                   
-                   <th className="w-24 bg-slate-800">Plan Kg</th>
-                   <th className="w-24 bg-slate-800 text-emerald-400">Achv Kg</th>
-                   
-                   <th className="w-24 bg-slate-700/50 text-rose-300">Lost Qty</th>
-                   <th className="w-24 bg-slate-700/50 text-rose-300">Lost Kg</th>
+         return { date, rows: filteredRows, subTotal, supervisors };
+      }).filter(group => group.rows.length > 0);
 
-                   <th className="w-24 text-amber-300">BD Loss</th>
-                   <th className="w-24 text-amber-300">Eff Loss</th>
-                   <th className="w-16">Eff %</th>
-                </tr>
-             </thead>
-             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {reportData.map((group) => (
-                   <React.Fragment key={group.date}>
-                      {group.rows.map((row, idx) => {
-                         const m = calculateMetrics(row);
-                         return (
-                            <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-700 text-center text-slate-700 dark:text-slate-300 font-bold border-b border-slate-50 dark:border-slate-800">
-                               <td className="py-2 text-xs font-black text-slate-400 border-r border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
-                                  {idx === 0 ? group.date : ''}
-                               </td>
-                               <td className="py-2">
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border ${row.shift === 'day' ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800' : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border-indigo-100 dark:border-indigo-800'}`}>
-                                    {row.shift}
-                                  </span>
-                               </td>
-                               <td className="py-2 text-[10px] text-indigo-600 dark:text-indigo-300 font-bold bg-slate-50/30 dark:bg-slate-800/30">
-                                   <div className="flex items-center justify-center gap-1">
-                                       <User className="w-3 h-3 opacity-50"/> 
-                                       {row.shift === 'day' ? group.supervisors.day : group.supervisors.night}
-                                   </div>
-                               </td>
-                               <td className="py-2 font-black text-xs">{row.machine}</td>
-                               <td className="py-2 text-left pl-4 text-xs font-medium">{row.product}</td>
-                               <td className="py-2 text-slate-500 dark:text-slate-400">{row.unitWeight}</td>
-                               <td className="py-2 text-slate-500 dark:text-slate-400">{row.qtyPerHour}</td>
-                               <td className="py-2 text-slate-500 dark:text-slate-400">{row.cavities}</td>
-                               <td className="py-2 text-emerald-700 dark:text-emerald-400">{m.timeHr}</td>
-                               
-                               <td className="py-2 bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">{m.planQty}</td>
-                               <td className="py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-black">{row.achievedQty}</td>
-                               
-                               <td className="py-2 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400">{m.planKg}</td>
-                               <td className="py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-black">{m.achievedKg}</td>
-                               
-                               <td className="py-2 bg-rose-50/30 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400">{m.lostQty}</td>
-                               <td className="py-2 bg-rose-50/30 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400">{m.lostKg}</td>
+      return grouped;
+   }, [startDate, endDate, machineType, allData, machineFilter, productFilter]);
 
-                               <td className="py-2 text-amber-600 dark:text-amber-400 bg-amber-50/30 dark:bg-amber-900/10">{m.bdLostKg}</td>
-                               <td className="py-2 text-amber-600 dark:text-amber-400 bg-amber-50/30 dark:bg-amber-900/10">{m.efficiencyLossKg}</td>
-                               <td className="py-2 text-[10px]">{m.efficiency.toFixed(0)}%</td>
-                            </tr>
-                         );
-                      })}
+   React.useEffect(() => {
+      if (reportData.length > 0) {
+         const initialExpanded: Record<string, boolean> = {};
+         reportData.forEach(g => initialExpanded[g.date] = true);
+         // Reset expansion when filters change to show results clearly
+         setExpandedDates(initialExpanded);
+      }
+   }, [machineFilter, productFilter]); // Trigger expand reset only on filter changes
 
-                      <tr className="bg-yellow-100 dark:bg-yellow-900/40 border-b-2 border-slate-300 dark:border-slate-600 text-center h-10 font-black text-xs text-slate-900 dark:text-slate-200 shadow-sm relative z-10">
-                         <td className="border-r border-slate-300 dark:border-slate-600 bg-yellow-200 dark:bg-yellow-900/60">TOTAL ({group.date})</td>
-                         <td colSpan={8}></td>
-                         
-                         <td className="text-slate-800 dark:text-slate-300">{group.subTotal.planQty.toLocaleString()}</td>
-                         <td className="text-emerald-900 dark:text-emerald-300 text-sm">{group.subTotal.achvQty.toLocaleString()}</td>
-                         
-                         <td className="text-slate-800 dark:text-slate-300">{group.subTotal.planKg.toFixed(1)}</td>
-                         <td className="text-emerald-900 dark:text-emerald-300 text-sm">{group.subTotal.achvKg.toFixed(1)}</td>
-                         
-                         <td className="text-rose-700 dark:text-rose-300">{group.subTotal.lostQty.toLocaleString()}</td>
-                         <td className="text-rose-700 dark:text-rose-300">{group.subTotal.lostKg.toFixed(1)}</td>
-                         
-                         <td className="text-amber-800 dark:text-amber-300">{group.subTotal.bdLostKg.toFixed(1)}</td>
-                         <td className="text-amber-800 dark:text-amber-300">{group.subTotal.effLostKg.toFixed(1)}</td>
-                         <td></td>
-                      </tr>
-                   </React.Fragment>
-                ))}
 
-                <tr className="bg-slate-900 h-16 text-center text-white font-black text-sm border-t-4 border-slate-800">
-                    <td colSpan={6} className="text-left pl-6 text-yellow-400 uppercase tracking-widest text-lg">GRAND TOTAL</td>
-                    <td colSpan={3}></td>
-                    
-                    <td className="text-slate-400 text-xs">{grandTotal.planQty.toLocaleString()}</td>
-                    <td className="text-yellow-400 text-lg">{grandTotal.achvQty.toLocaleString()}</td>
-                    
-                    <td className="text-slate-400 text-xs">{grandTotal.planKg.toFixed(1)}</td>
-                    <td className="text-yellow-400 text-lg">{grandTotal.achvKg.toFixed(1)} <span className="text-xs text-white/50">kg</span></td>
-                    
-                    <td className="text-rose-400 opacity-70">{grandTotal.lostQty.toLocaleString()}</td>
-                    <td className="text-rose-400 text-lg">{grandTotal.lostKg.toFixed(1)}</td>
-                    
-                    <td className="text-amber-400">{grandTotal.bdLostKg.toFixed(1)}</td>
-                    <td className="text-amber-400">{grandTotal.effLostKg.toFixed(1)}</td>
-                    <td></td>
-                </tr>
-             </tbody>
-          </table>
-       </div>
-    </div>
-  );
+
+   const toggleDate = (date: string) => {
+      setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }));
+   };
+
+   const grandTotal = reportData.reduce((acc, group) => {
+      return {
+         planQty: acc.planQty + group.subTotal.planQty,
+         achvQty: acc.achvQty + group.subTotal.achvQty,
+         planKg: acc.planKg + group.subTotal.planKg,
+         achvKg: acc.achvKg + group.subTotal.achvKg,
+         lostQty: acc.lostQty + group.subTotal.lostQty,
+         lostKg: acc.lostKg + group.subTotal.lostKg,
+         bdLostKg: acc.bdLostKg + group.subTotal.bdLostKg,
+         effLostKg: acc.effLostKg + group.subTotal.effLostKg,
+      };
+   }, { planQty: 0, achvQty: 0, planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 });
+
+   if (reportData.length === 0) {
+      return (
+         <div className="p-16 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col items-center animate-fade-in">
+            <div className="p-6 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-400 mb-6 shadow-inner"><Database className="w-12 h-12 opacity-50" /></div>
+            <h3 className="text-2xl font-black text-slate-700 dark:text-slate-300 mb-2">No Records Found</h3>
+            <p className="text-slate-400 dark:text-slate-500 font-medium">Adjust the date range to view production logs.</p>
+         </div>
+      );
+   }
+
+   return (
+      <div className="space-y-8 animate-fade-in pb-10">
+
+         {/* GRAND TOTAL SUMMARY CARD */}
+         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 text-white shadow-2xl border border-slate-700 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-32 bg-indigo-500 rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
+            <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-6">
+               <div className="flex items-center gap-4">
+                  <div className="p-4 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10">
+                     <Layers className="w-8 h-8 text-indigo-400" />
+                  </div>
+                  <div>
+                     <h2 className="text-xl font-black uppercase tracking-widest text-slate-400">{machineType} REPORT SUMMARY</h2>
+                     <div className="text-3xl font-black text-white">{grandTotal.achvKg.toFixed(1)} <span className="text-lg text-slate-500">kg</span></div>
+                  </div>
+               </div>
+
+               <div className="flex flex-wrap justify-center gap-4 lg:gap-8">
+                  <div className="text-center px-4 py-2 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-sm">
+                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Plan Kg</div>
+                     <div className="text-xl font-black text-white">{grandTotal.planKg.toFixed(1)}</div>
+                  </div>
+                  <div className="text-center px-4 py-2 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 backdrop-blur-sm">
+                     <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">Achv Kg</div>
+                     <div className="text-xl font-black text-emerald-400">{grandTotal.achvKg.toFixed(1)}</div>
+                  </div>
+                  <div className="text-center px-4 py-2 bg-rose-500/10 rounded-2xl border border-rose-500/20 backdrop-blur-sm">
+                     <div className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-1">Lost Kg</div>
+                     <div className="text-xl font-black text-rose-400">{grandTotal.lostKg.toFixed(1)}</div>
+                  </div>
+                  <div className="text-center px-4 py-2 bg-amber-500/10 rounded-2xl border border-amber-500/20 backdrop-blur-sm">
+                     <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">Eff %</div>
+                     <div className="text-xl font-black text-amber-400">
+                        {grandTotal.planKg > 0 ? ((grandTotal.achvKg / grandTotal.planKg) * 100).toFixed(1) : '0.0'}%
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+
+         {/* DAILY CARDS */}
+         <div className="space-y-6">
+            {reportData.map((group) => {
+               const isExpanded = expandedDates[group.date] ?? true;
+               const eff = group.subTotal.planKg > 0 ? (group.subTotal.achvKg / group.subTotal.planKg) * 100 : 0;
+
+               return (
+                  <div key={group.date} className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden transition-all hover:shadow-xl">
+                     {/* CARD HEADER */}
+                     <div
+                        onClick={() => toggleDate(group.date)}
+                        className="bg-slate-50 dark:bg-slate-900/50 p-4 lg:p-6 flex flex-col lg:flex-row items-center justify-between gap-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-b border-slate-200 dark:border-slate-700"
+                     >
+                        <div className="flex items-center gap-4 w-full lg:w-auto">
+                           <div className={`p-3 rounded-xl ${eff >= 90 ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : eff >= 80 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'}`}>
+                              <Calendar className="w-6 h-6" />
+                           </div>
+                           <div>
+                              <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                                 {group.date}
+                                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 font-bold">{group.rows.length} records</span>
+                              </h3>
+                              <div className="flex items-center gap-4 text-xs font-bold text-slate-400 mt-1">
+                                 <span className="flex items-center gap-1"><User className="w-3 h-3" /> D: {group.supervisors.day}</span>
+                                 <span className="flex items-center gap-1"><User className="w-3 h-3" /> N: {group.supervisors.night}</span>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* DAILY SUMMARY STATS */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-6 w-full lg:w-auto">
+                           <div className="text-center">
+                              <div className="text-[10px] font-bold text-slate-400 uppercase">Plan</div>
+                              <div className="font-black text-slate-700 dark:text-slate-300">{group.subTotal.planKg.toFixed(1)}</div>
+                           </div>
+                           <div className="text-center">
+                              <div className="text-[10px] font-bold text-emerald-500 uppercase">Achieved</div>
+                              <div className="font-black text-emerald-600 dark:text-emerald-400">{group.subTotal.achvKg.toFixed(1)}</div>
+                           </div>
+                           <div className="text-center">
+                              <div className="text-[10px] font-bold text-rose-500 uppercase">Lost</div>
+                              <div className="font-black text-rose-600 dark:text-rose-400">{group.subTotal.lostKg.toFixed(1)}</div>
+                           </div>
+                           <div className="text-center">
+                              <div className="text-[10px] font-bold text-amber-500 uppercase">Eff %</div>
+                              <div className="font-black text-amber-600 dark:text-amber-400">{eff.toFixed(1)}%</div>
+                           </div>
+                        </div>
+
+                        <div className="hidden lg:block">
+                           {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                        </div>
+                     </div>
+
+                     {/* EXPANDABLE CONTENT TABLE */}
+                     {isExpanded && (
+                        <div className="overflow-x-auto custom-scrollbar">
+                           <table className="w-full text-left text-[11px] min-w-[1500px] border-collapse">
+                              <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold text-[10px] border-b border-slate-200 dark:border-slate-700">
+                                 <tr>
+                                    <th className="py-3 px-2 w-12 text-center">Shift</th>
+                                    <th className="py-3 px-2 w-20">Machine</th>
+                                    <th className="py-3 px-4 w-48">Product</th>
+                                    <th className="py-3 px-2 w-16 text-right">Wt(g)</th>
+                                    <th className="py-3 px-2 w-16 text-right">Qty/Hr</th>
+                                    <th className="py-3 px-2 w-12 text-center">Cav</th>
+                                    <th className="py-3 px-2 w-16 text-center text-indigo-500">Time</th>
+                                    <th className="py-3 px-2 w-20 text-right bg-slate-200/50 dark:bg-slate-800/50">Plan Qty</th>
+                                    <th className="py-3 px-2 w-20 text-right bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400">Achv Qty</th>
+                                    <th className="py-3 px-2 w-20 text-right bg-slate-200/50 dark:bg-slate-800/50">Plan Kg</th>
+                                    <th className="py-3 px-2 w-20 text-right bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400">Achv Kg</th>
+                                    <th className="py-3 px-2 w-20 text-right text-rose-500 bg-rose-50/50 dark:bg-rose-900/10">Lost Qty</th>
+                                    <th className="py-3 px-2 w-20 text-right text-rose-500 bg-rose-50/50 dark:bg-rose-900/10">Lost Kg</th>
+                                    <th className="py-3 px-2 w-20 text-right text-amber-500">BD Loss</th>
+                                    <th className="py-3 px-2 w-20 text-right text-amber-500">Eff Loss</th>
+                                    <th className="py-3 px-2 w-12 text-center">Eff %</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                 {group.rows.map((row) => {
+                                    const m = calculateMetrics(row);
+                                    return (
+                                       <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors dark:text-slate-300">
+                                          <td className="py-2.5 px-2 text-center">
+                                             <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest ${row.shift === 'day' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700'}`}>
+                                                {row.shift}
+                                             </span>
+                                          </td>
+                                          <td className="py-2.5 px-2 font-black text-slate-700 dark:text-slate-200">{row.machine}</td>
+                                          <td className="py-2.5 px-4 font-medium text-slate-600 dark:text-slate-400">{row.product}</td>
+                                          <td className="py-2.5 px-2 text-right text-slate-500">{row.unitWeight}</td>
+                                          <td className="py-2.5 px-2 text-right text-slate-500">{row.qtyPerHour}</td>
+                                          <td className="py-2.5 px-2 text-center text-slate-500">{row.cavities}</td>
+                                          <td className="py-2.5 px-2 text-center font-mono text-indigo-500">{m.timeHr}</td>
+
+                                          <td className="py-2.5 px-2 text-right font-medium text-slate-500 bg-slate-50 dark:bg-slate-800/30">{m.planQty}</td>
+                                          <td className="py-2.5 px-2 text-right font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/5">{row.achievedQty}</td>
+
+                                          <td className="py-2.5 px-2 text-right font-medium text-slate-500 bg-slate-50 dark:bg-slate-800/30">{m.planKg}</td>
+                                          <td className="py-2.5 px-2 text-right font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/5">{m.achievedKg}</td>
+
+                                          <td className="py-2.5 px-2 text-right text-rose-500 bg-rose-50/10 dark:bg-rose-900/5">{m.lostQty}</td>
+                                          <td className="py-2.5 px-2 text-right font-bold text-rose-500 bg-rose-50/10 dark:bg-rose-900/5">{m.lostKg}</td>
+
+                                          <td className="py-2.5 px-2 text-right text-amber-600 dark:text-amber-500">{m.bdLostKg}</td>
+                                          <td className="py-2.5 px-2 text-right text-amber-600 dark:text-amber-500">{m.efficiencyLossKg}</td>
+                                          <td className="py-2.5 px-2 text-center text-[10px] font-bold bg-slate-50 dark:bg-slate-800/30">{m.efficiency.toFixed(0)}%</td>
+                                       </tr>
+                                    );
+                                 })}
+                              </tbody>
+                              <tfoot className="bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-600 font-bold text-slate-800 dark:text-white text-xs">
+                                 <tr>
+                                    <td colSpan={7} className="py-3 px-4 text-right uppercase text-slate-500 tracking-widest text-[10px]">Total ({group.date})</td>
+                                    <td className="py-3 px-2 text-right">{group.subTotal.planQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right text-emerald-600 dark:text-emerald-400">{group.subTotal.achvQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right">{group.subTotal.planKg.toFixed(1)}</td>
+                                    <td className="py-3 px-2 text-right text-emerald-600 dark:text-emerald-400">{group.subTotal.achvKg.toFixed(1)}</td>
+                                    <td className="py-3 px-2 text-right text-rose-600 dark:text-rose-400">{group.subTotal.lostQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right text-rose-600 dark:text-rose-400">{group.subTotal.lostKg.toFixed(1)}</td>
+                                    <td className="py-3 px-2 text-right text-amber-600 dark:text-amber-500">{group.subTotal.bdLostKg.toFixed(1)}</td>
+                                    <td className="py-3 px-2 text-right text-amber-600 dark:text-amber-500">{group.subTotal.effLostKg.toFixed(1)}</td>
+                                    <td></td>
+                                 </tr>
+                              </tfoot>
+                           </table>
+                        </div>
+                     )}
+                  </div>
+               );
+            })}
+         </div>
+      </div>
+   );
 };
 
 export default DatabaseView;

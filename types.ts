@@ -1,27 +1,30 @@
-
 export type ShiftType = 'day' | 'night';
 export type MachineType = 'IM' | 'BM';
 
-export interface MachineItemConfig {
+export interface ProductionItem {
   id: string;
-  machineName: string; // e.g., M01
+  machine: string;
   itemName: string;
   customerName: string;
   unitWeight: number;
+  jobNo: string; // New Field
+  type: MachineType; // To separate IM/BM
 }
 
 export interface AdminConfig {
-  machineMappings: MachineItemConfig[];
+  productionItems: ProductionItem[]; // Replaces machineMappings
+  breakdownCategories: string[]; // List of categories
 }
 
+// ... (Breakdown interface remains same)
 export interface Breakdown {
   id: string;
   category: string;
   description: string;
   startTime: string;
   endTime: string;
-  machine?: string; // Added for log view
-  date?: string;    // Added for log view
+  machine?: string;
+  date?: string;
 }
 
 export interface ProductionRow {
@@ -34,15 +37,17 @@ export interface ProductionRow {
   unitWeight: number;
   qtyPerHour: number;
   cavities: number;
-  cycleTime: number;
+  cycleTime?: number;
   achievedQty: number;
   breakdowns: Breakdown[];
 }
 
 export interface DayData {
-  id: string; // YYYY-MM-DD_TYPE
+  id: string;
   date: string;
   machineType: MachineType;
+  daySupervisor?: string;
+  nightSupervisor?: string;
   rows: ProductionRow[];
 }
 
@@ -51,14 +56,4 @@ export enum AppTab {
   KPI = 'analytics',
   OEE = 'efficiency',
   ADMIN = 'admin'
-}
-
-export interface DayData {
-  id: string; // YYYY-MM-DD_TYPE
-  date: string;
-  machineType: MachineType;
-  // NEW SUPERVISOR FIELDS
-  daySupervisor?: string;
-  nightSupervisor?: string;
-  rows: ProductionRow[];
 }

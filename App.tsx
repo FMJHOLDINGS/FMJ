@@ -16,7 +16,6 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.PRODUCTION);
-  // This state is just an initial value now, managed inside ProductionTab
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   const [allData, setAllData] = useState<Record<string, any>>(() => {
@@ -24,7 +23,6 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : {};
   });
 
-  // Dark Mode State Logic
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
     return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -83,7 +81,7 @@ const App: React.FC = () => {
   }, [docRef]);
 
   const adminConfig: AdminConfig = useMemo(() => {
-    return allData.adminConfig || { machineMappings: [] };
+    return allData.adminConfig || { productionItems: [] };
   }, [allData]);
 
   const updateAdminConfig = (newConfig: AdminConfig) => {
@@ -98,63 +96,52 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] dark:bg-[#020617] text-slate-800 dark:text-slate-200 overflow-hidden transition-colors duration-300">
+      
       {/* Sidebar */}
-      <aside className={`bg-[#0F172A] border-r border-slate-800 text-slate-400 transition-all duration-300 flex flex-col z-50 shadow-2xl ${isSidebarOpen ? 'w-72' : 'w-20'}`}>
-        <div className="h-20 flex items-center px-6 border-b border-slate-800 gap-4 overflow-hidden">
-          <div className="bg-indigo-600 p-2 rounded-xl flex-shrink-0"><Factory className="w-6 h-6 text-white" /></div>
-          {isSidebarOpen && <div className="flex flex-col"><span className="text-white font-black">FMJ PRO</span><span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Hybrid Sync</span></div>}
+      <aside className={`bg-[#0F172A] border-r border-slate-800 text-slate-400 transition-all duration-300 flex flex-col z-50 shadow-2xl ${isSidebarOpen ? 'w-64' : 'w-16'}`}>
+        <div className="h-14 flex items-center px-4 border-b border-slate-800 gap-3 overflow-hidden">
+          <div className="bg-indigo-600 p-1.5 rounded-lg flex-shrink-0"><Factory className="w-5 h-5 text-white" /></div>
+          {isSidebarOpen && <div className="flex flex-col"><span className="text-white font-black text-sm">FMJ PRO</span><span className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Hybrid Sync</span></div>}
         </div>
 
-        <nav className="flex-1 px-3 py-8 space-y-2">
-          <NavItem icon={<LayoutDashboard />} label="Productions" active={activeTab === AppTab.PRODUCTION} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.PRODUCTION)} />
-          <NavItem icon={<TrendingUp />} label="Analytics" active={activeTab === AppTab.KPI} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.KPI)} />
-          <NavItem icon={<Activity />} label="Efficiency" active={activeTab === AppTab.OEE} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.OEE)} />
-          <NavItem icon={<UserCog />} label="Admin Panel" active={activeTab === AppTab.ADMIN} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.ADMIN)} />
+        <nav className="flex-1 px-2 py-4 space-y-1">
+          <NavItem icon={<LayoutDashboard className="w-5 h-5"/>} label="Productions" active={activeTab === AppTab.PRODUCTION} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.PRODUCTION)} />
+          <NavItem icon={<TrendingUp className="w-5 h-5"/>} label="Analytics" active={activeTab === AppTab.KPI} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.KPI)} />
+          <NavItem icon={<Activity className="w-5 h-5"/>} label="Efficiency" active={activeTab === AppTab.OEE} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.OEE)} />
+          <NavItem icon={<UserCog className="w-5 h-5"/>} label="Admin Panel" active={activeTab === AppTab.ADMIN} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.ADMIN)} />
           
-          <div className="pt-8 border-t border-slate-800 mt-4 px-3">
-            <div className={`flex items-center gap-4 py-3 px-3 rounded-xl transition-all ${cloudStatus === 'syncing' ? 'text-indigo-400' : cloudStatus === 'success' ? 'text-emerald-400' : 'text-slate-500'}`}>
-              <CloudUpload className={cloudStatus === 'syncing' ? 'animate-spin' : ''} />
-              {isSidebarOpen && <span className="font-bold text-xs uppercase tracking-widest">{cloudStatus === 'syncing' ? 'Syncing...' : 'Cloud Active'}</span>}
-            </div>
-            <button onClick={() => setIsConfigModalOpen(true)} className="w-full flex items-center gap-4 py-3 px-3 mt-2 rounded-xl hover:bg-slate-800 text-slate-400">
-              <SettingsIcon /><>{isSidebarOpen && <span className="font-bold text-sm text-left">Sync Settings</span>}</>
+          <div className="pt-4 border-t border-slate-800 mt-2 px-2">
+            <button onClick={() => setIsConfigModalOpen(true)} className="w-full flex items-center gap-3 py-2 px-3 mt-1 rounded-lg hover:bg-slate-800 text-slate-400">
+              <SettingsIcon className="w-5 h-5"/><>{isSidebarOpen && <span className="font-bold text-xs text-left">Sync Settings</span>}</>
             </button>
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
-           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full p-3 rounded-xl hover:bg-slate-800 transition-all flex justify-center">
-             <ChevronRight className={`transition-transform ${isSidebarOpen ? 'rotate-180' : ''}`} />
+        <div className="p-2 border-t border-slate-800">
+           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full p-2 rounded-lg hover:bg-slate-800 transition-all flex justify-center">
+             <ChevronRight className={`w-5 h-5 transition-transform ${isSidebarOpen ? 'rotate-180' : ''}`} />
            </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-20 bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-10 transition-colors duration-300">
+      <main className="flex-1 flex flex-col overflow-hidden relative h-screen">
+        <header className="h-14 bg-white dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 transition-colors duration-300 shadow-sm z-30 flex-shrink-0">
           <div className="flex items-center gap-4">
-             <h1 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">{activeTab}</h1>
-             
-             {/* --- OLD DATE PICKER REMOVED FROM HERE --- */}
-             {/* It is now inside ProductionTab.tsx */}
-
+             <h1 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight">{activeTab}</h1>
           </div>
           
-          {/* Dark Mode Toggle Switch */}
-          <div className="flex items-center gap-6">
-             <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 hidden md:block">
-                  {isDarkMode ? 'Dark Mode' : 'Light Mode'}
-                </span>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setIsDarkMode(!isDarkMode)}
-                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 flex items-center relative shadow-inner ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                  className={`w-10 h-6 rounded-full p-0.5 transition-colors duration-300 flex items-center relative shadow-inner ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
                 >
-                   <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center absolute ${isDarkMode ? 'translate-x-[26px]' : 'translate-x-0'}`}>
+                   <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center absolute ${isDarkMode ? 'translate-x-[16px]' : 'translate-x-0'}`}>
                       {isDarkMode ? (
-                        <Moon className="w-3.5 h-3.5 text-indigo-600" />
+                        <Moon className="w-3 h-3 text-indigo-600" />
                       ) : (
-                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                        <Sun className="w-3 h-3 text-amber-500" />
                       )}
                    </div>
                 </button>
@@ -162,7 +149,12 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#020617] transition-colors duration-300">
+        {/* 
+           SCROLL CONTAINER 
+           mb-16 creates space for the footer (64px)
+           so scrollbar appears exactly above it.
+        */}
+        <div className="flex-1 overflow-auto bg-[#F8FAFC] dark:bg-[#020617] transition-colors duration-300 custom-scrollbar mb-16">
           {activeTab === AppTab.PRODUCTION && (
             <ProductionTab date={selectedDate} allData={allData} onUpdate={updateDayData} adminConfig={adminConfig} />
           )}
@@ -172,19 +164,19 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Sync Info Modal - Fully Dynamic */}
+      {/* Sync Info Modal */}
       {isConfigModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md transition-all">
            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fade-in relative">
-              <div className="p-8 bg-[#0F172A] text-white flex items-center gap-4">
-                <Database className={`w-8 h-8 ${cloudStatus === 'syncing' ? 'text-amber-400 animate-pulse' : cloudStatus === 'error' ? 'text-rose-500' : 'text-emerald-400'}`} />
+              <div className="p-6 bg-[#0F172A] text-white flex items-center gap-4">
+                <Database className={`w-6 h-6 ${cloudStatus === 'syncing' ? 'text-amber-400 animate-pulse' : cloudStatus === 'error' ? 'text-rose-500' : 'text-emerald-400'}`} />
                 <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight">Sync Status</h3>
+                  <h3 className="text-lg font-black uppercase tracking-tight">Sync Status</h3>
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Real-time Hybrid Engine</p>
                 </div>
               </div>
 
-              <div className="p-8 space-y-4">
+              <div className="p-6 space-y-4">
                  <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 p-4 rounded-2xl flex items-start gap-3">
                     <div className="p-1 bg-emerald-100 dark:bg-emerald-800 rounded-full mt-0.5"><div className="w-2 h-2 bg-emerald-500 rounded-full"></div></div>
                     <div>
@@ -233,9 +225,9 @@ const App: React.FC = () => {
 };
 
 const NavItem: React.FC<{ icon: any, label: string, active: boolean, isOpen: boolean, onClick: () => void }> = ({ icon, label, active, isOpen, onClick }) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all ${active ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}>
+  <button onClick={onClick} className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${active ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'}`}>
     {icon}
-    {isOpen && <span className="font-bold text-sm tracking-tight whitespace-nowrap">{label}</span>}
+    {isOpen && <span className="font-bold text-xs tracking-wide whitespace-nowrap">{label}</span>}
   </button>
 );
 

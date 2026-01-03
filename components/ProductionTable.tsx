@@ -13,7 +13,12 @@ interface Props {
 }
 
 const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOpenBreakdowns, adminConfig, isFormMode }) => {
-  const uniqueMachines = Array.from(new Set(adminConfig.machineMappings.map(m => m.machineName))).sort();
+  
+  // FIX: Access 'productionItems' instead of 'machineMappings'
+  const allItems = adminConfig?.productionItems || [];
+  
+  // Get Unique Machine list
+  const uniqueMachines = Array.from(new Set(allItems.map(m => m.machine))).sort();
 
   if (rows.length === 0) {
     return (
@@ -29,6 +34,7 @@ const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOp
     );
   }
 
+  // UPDATED: No internal scroll (max-h removed), so it scrolls with the page
   return (
     <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-xl shadow-slate-200/40 dark:shadow-black/40 overflow-hidden overflow-x-auto custom-scrollbar transition-colors duration-300">
       <table className="w-full text-left text-[11px] min-w-[2000px] border-collapse">
@@ -37,7 +43,7 @@ const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOp
             <th className="px-2 w-24 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Start</th>
             <th className="px-2 w-24 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">End</th>
             <th className="px-2 w-28 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Machine</th>
-            <th className="px-2 w-64 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300 text-left pl-4">Product</th>
+            <th className="px-2 w-64 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300 text-left pl-4">Product / Job</th>
             <th className="px-2 w-16 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Wt(g)</th>
             <th className="px-2 w-16 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Q/Hr</th>
             <th className="px-2 w-12 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Cav</th>
@@ -67,7 +73,7 @@ const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOp
         <tbody className="divide-y divide-slate-50 dark:divide-slate-800 text-center">
           {rows.map(row => {
             const m = calculateMetrics(row);
-            const machineItems = adminConfig.machineMappings.filter(cfg => cfg.machineName === row.machine);
+            const machineItems = allItems.filter(item => item.machine === row.machine);
 
             return (
               <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-all group/row h-14 text-slate-700 dark:text-slate-300">
@@ -75,15 +81,20 @@ const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOp
                 <td className="p-1"><input type="time" value={row.startTime} onChange={e => onUpdateRow(row.id, { startTime: e.target.value })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 dark:[color-scheme:dark]" /></td>
                 <td className="p-1"><input type="time" value={row.endTime} onChange={e => onUpdateRow(row.id, { endTime: e.target.value })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 dark:[color-scheme:dark]" /></td>
                 
+                {/* MACHINE DROPDOWN STYLED */}
                 <td className="p-1 relative">
                    <div className="relative group/select">
                       <select 
                         value={row.machine} 
                         onChange={e => onUpdateRow(row.id, { machine: e.target.value })}
-                        className="w-full text-center font-black uppercase text-indigo-600 dark:text-indigo-400 bg-slate-50 dark:bg-slate-900 border border-transparent dark:border-slate-700 focus:bg-white dark:focus:bg-slate-950 focus:shadow-md rounded-lg py-1 outline-none appearance-none cursor-pointer"
+                        className="w-full text-center font-black uppercase text-indigo-600 dark:text-indigo-400 bg-slate-50 dark:bg-slate-900 border border-transparent dark:border-slate-700 focus:bg-white dark:focus:bg-slate-950 focus:shadow-md rounded-lg py-1.5 outline-none appearance-none cursor-pointer"
                       >
                          <option value="">MAC</option>
-                         {uniqueMachines.map(m => <option key={m} value={m}>{m}</option>)}
+                         {uniqueMachines.length > 0 ? (
+                           uniqueMachines.map(m => <option key={m} value={m}>{m}</option>)
+                         ) : (
+                           ['Select Admin'].map(m => <option key={m} value={m}>{m}</option>)
+                         )}
                       </select>
                    </div>
                 </td>
@@ -94,12 +105,19 @@ const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOp
                       value={row.product} 
                       onChange={e => {
                         const selected = machineItems.find(i => i.itemName === e.target.value);
-                        onUpdateRow(row.id, { product: e.target.value, unitWeight: selected ? selected.unitWeight : row.unitWeight });
+                        onUpdateRow(row.id, { 
+                            product: e.target.value, 
+                            unitWeight: selected ? selected.unitWeight : row.unitWeight 
+                        });
                       }}
                       className="w-full py-1.5 pl-2 pr-6 font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none cursor-pointer appearance-none hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 text-xs text-slate-700 dark:text-slate-200"
                     >
                       <option value="">{row.machine ? `Select Item...` : 'Select Machine'}</option>
-                      {machineItems.map(item => <option key={item.id} value={item.itemName}>{item.itemName}</option>)}
+                      {machineItems.map(item => (
+                          <option key={item.id} value={item.itemName}>
+                              {item.itemName} {item.jobNo ? `(${item.jobNo})` : ''}
+                          </option>
+                      ))}
                       <option value="Manual Entry">Manual Entry</option>
                     </select>
                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
