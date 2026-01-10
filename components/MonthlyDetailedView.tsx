@@ -19,6 +19,7 @@ const DEFAULT_REASONS = [
 // Colors (ARGB) - Matching VBA RGB Values
 const COL_L_BLUE = 'FFBDD7EE';
 const COL_L_GREY = 'FFD9D9D9';
+const COL_HEADER_BLUE = 'FF4472C4';
 
 interface Props {
     dailyData: any[];
@@ -33,7 +34,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
     const [isGenerating, setIsGenerating] = useState(false);
     const [activeTab, setActiveTab] = useState<string>('Summary');
 
-    // Use dynamic categories from Admin, fallback to defaults if empty
     const REASONS = breakdownCategories.length > 0 ? breakdownCategories : DEFAULT_REASONS;
 
     // --- DATA HELPERS ---
@@ -104,57 +104,40 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
         };
     };
 
-    // --- CHART CAPTURE HELPERS ---
-    const chartRef = useRef<HTMLDivElement>(null);
-
-    const convertChartToImage = async () => {
-        if (!chartRef.current) return null;
-        const svg = chartRef.current.querySelector('svg');
-        if (!svg) return null;
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const svgData = new XMLSerializer().serializeToString(svg);
-        const img = new Image();
-
-        // Add minimal styling to ensure visibility on white background
-        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-
-        return new Promise<string | null>((resolve) => {
-            img.onload = () => {
-                canvas.width = img.width + 50; // Add padding
-                canvas.height = img.height + 50;
-                if (ctx) {
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 25, 25);
-                    URL.revokeObjectURL(url);
-                    resolve(canvas.toDataURL('image/png'));
-                } else {
-                    resolve(null);
-                }
-            };
-            img.onerror = () => resolve(null);
-            img.src = url;
-        });
-    };
-
     // --- EXCEL GENERATION LOGIC ---
     const downloadSystemReport = async () => {
         try {
             setIsGenerating(true);
-            await new Promise(resolve => setTimeout(resolve, 500)); // Allow UI to settle
+            await new Promise(resolve => setTimeout(resolve, 500)); 
 
-            // Capture Chart First if active tab is Summary
-            let chartImageBase64: string | null = null;
-            if (activeTab === 'Summary') {
-                chartImageBase64 = await convertChartToImage();
+            // --- CALCULATE WORKING DAYS (Schedule & Production) ---
+            let schedDaysIM = 0, schedDaysBM = 0;
+            let prodDaysIM = 0, prodDaysBM = 0;
+            
+            const [yStr, mStr] = currentDate.split('-');
+            const daysInMonthTotal = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
+            
+            for (let i = 1; i <= daysInMonthTotal; i++) {
+                const dd = getDayData(i);
+                
+                // Schedule Working Days (Based on Plan > 0)
+                if (dd.im.dP > 0) schedDaysIM += 0.5;
+                if (dd.im.nP > 0) schedDaysIM += 0.5;
+                if (dd.bm.dP > 0) schedDaysBM += 0.5;
+                if (dd.bm.nP > 0) schedDaysBM += 0.5;
+                
+                // Production Working Days (Based on Achievement > 0)
+                if (dd.im.dA > 0) prodDaysIM += 0.5;
+                if (dd.im.nA > 0) prodDaysIM += 0.5;
+                if (dd.bm.dA > 0) prodDaysBM += 0.5;
+                if (dd.bm.nA > 0) prodDaysBM += 0.5;
             }
+            
+            const schedDaysTotal = Math.max(schedDaysIM, schedDaysBM);
+            const prodDaysTotal = Math.max(prodDaysIM, prodDaysBM);
 
             const workbook = new ExcelJS.Workbook();
-            // ... (rest of setupTableLayout function) ...
-
+            
             const setupTableLayout = (ws: ExcelJS.Worksheet, dayIndex: number, isSummary: boolean) => {
                 ws.getColumn(1).width = 18;
                 for (let c = 2; c <= 35; c++) ws.getColumn(c).width = 14;
@@ -189,7 +172,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 setH(3, 10, "Lost (Kg)"); ws.mergeCells('J3:J4');
                 setH(3, 11, "Lost (Kg) Accuracy"); ws.mergeCells('K3:K4');
                 setH(3, 12, "Lost Kg vs plan kg"); ws.mergeCells('L3:L4');
-                setH(3, 13, "Eff Loss kg"); ws.mergeCells('M3:M4'); // NEW COLUMN
+                setH(3, 13, "Eff Loss kg"); ws.mergeCells('M3:M4');
                 REASONS.forEach((reason, idx) => { const col = 14 + idx; setH(3, col, reason); ws.mergeCells(3, col, 4, col); });
                 ws.getRow(3).height = 45; ws.getRow(4).height = 45;
 
@@ -217,7 +200,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                     ws.getCell('E5').value = sum3D('E5'); ws.getCell('F5').value = sum3D('F5');
                     ws.getCell('C6').value = sum3D('C6'); ws.getCell('D6').value = sum3D('D6');
                     ws.getCell('E6').value = sum3D('E6'); ws.getCell('F6').value = sum3D('F6');
-                    ws.getCell('M5').value = sum3D('M5'); ws.getCell('M6').value = sum3D('M6'); // Summary for Eff Loss Kg
+                    ws.getCell('M5').value = sum3D('M5'); ws.getCell('M6').value = sum3D('M6'); 
                     REASONS.forEach((_, i) => { const colLet = ws.getColumn(14 + i).letter; ws.getCell(5, 14 + i).value = sum3D(`${colLet}5`); ws.getCell(6, 14 + i).value = sum3D(`${colLet}6`); });
                 } else {
                     const { im, bm, dateStr } = getDayData(dayIndex);
@@ -247,8 +230,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 for (let c = 2; c <= lastCol; c++) { const colLet = ws.getColumn(c).letter; if (c === 9) { ws.getCell(7, c).value = { formula: `IFERROR(H7/B7,0)` }; ws.getCell(7, c).numFmt = '0.00%'; } else if (c === 12) { ws.getCell(7, c).value = { formula: `IFERROR(J7/B7,0)` }; ws.getCell(7, c).numFmt = '0.00%'; } else if (c === 10) { ws.getCell(7, c).value = { formula: `B7-H7` }; } else { ws.getCell(7, c).value = { formula: `SUM(${colLet}5:${colLet}6)` }; } }
             };
 
-            // --- ADD SUMMARY SECTIONS (Schedule, Production, Pareto) ---
-            const addSummarySections = (ws: ExcelJS.Worksheet, chartImage: string | null) => {
+            const addSummarySections = (ws: ExcelJS.Worksheet) => {
                 const lastCol = 13 + REASONS.length;
                 const lastColLetter = ws.getColumn(lastCol).letter;
 
@@ -265,7 +247,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 ws.getCell('B9').font = { bold: true };
 
                 ws.getCell('A10').value = 'Working Days';
-                ws.getCell('B10').value = 31;
+                ws.getCell('B10').value = schedDaysTotal; // UPDATED with calculated days
                 ws.getCell('A11').value = 'Average Per Day (Kg)';
                 ws.getCell('B11').value = { formula: 'IFERROR(G7/B10,0)' };
                 ws.getCell('A12').value = 'Average per day(Kg)-IM';
@@ -273,7 +255,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 ws.getCell('A13').value = 'Average per day(Kg)-BM';
                 ws.getCell('B13').value = { formula: 'IFERROR(G6/B10,0)' };
 
-                // Style Schedule Table
                 for (let r = 10; r <= 13; r++) {
                     ws.getCell(r, 1).border = borderStyle;
                     ws.getCell(r, 1).fill = greyFill;
@@ -289,7 +270,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 ws.getCell('E9').font = { bold: true };
 
                 ws.getCell('D10').value = 'Working Days';
-                ws.getCell('E10').value = 31;
+                ws.getCell('E10').value = prodDaysTotal; // UPDATED with calculated days
                 ws.getCell('D11').value = 'Average Per Day (Kg)';
                 ws.getCell('E11').value = { formula: 'IFERROR(H7/E10,0)' };
                 ws.getCell('D12').value = 'Average per day(Kg)-IM';
@@ -297,7 +278,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 ws.getCell('D13').value = 'Average per day(Kg)-BM';
                 ws.getCell('E13').value = { formula: 'IFERROR(H6/E10,0)' };
 
-                // Style Production Table
                 for (let r = 10; r <= 13; r++) {
                     ws.getCell(r, 4).border = borderStyle;
                     ws.getCell(r, 4).fill = greyFill;
@@ -306,85 +286,96 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                     ws.getCell(r, 5).numFmt = '0.0';
                 }
 
-                // --- C. Pareto Table (Row 17+) ---
-                const paretoStartRow = 17;
+                // --- C. IM & BM Loss Analysis Tables (Row 16+) ---
+                const startRow = 16;
+                const headerBlue: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COL_HEADER_BLUE } };
+                const fontWhite: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
 
-                // Headers
-                ws.getCell(paretoStartRow, 1).value = 'Reason';
-                ws.getCell(paretoStartRow, 2).value = 'KG';
-                ws.getCell(paretoStartRow, 3).value = '%';
-                ws.getCell(paretoStartRow, 4).value = 'Cumulative';
+                // --- IM TABLE (Columns A-D) ---
+                ws.mergeCells(`A${startRow}:D${startRow}`);
+                ws.getCell(`A${startRow}`).value = "IM Machine Loss Analysis";
+                ws.getCell(`A${startRow}`).fill = headerBlue;
+                ws.getCell(`A${startRow}`).font = fontWhite;
+                ws.getCell(`A${startRow}`).alignment = { horizontal: 'center' };
 
-                for (let c = 1; c <= 4; c++) {
-                    ws.getCell(paretoStartRow, c).font = { bold: true };
-                    ws.getCell(paretoStartRow, c).fill = greyFill;
-                    ws.getCell(paretoStartRow, c).border = borderStyle;
-                    ws.getCell(paretoStartRow, c).alignment = { horizontal: 'center' };
-                }
-
-                // Data Rows (using HLOOKUP for KG values)
-                const endParetoRow = paretoStartRow + REASONS.length;
-                const sumRange = `$B$${paretoStartRow + 1}:$B$${endParetoRow}`;
-
-                REASONS.forEach((reason, idx) => {
-                    const rowNum = paretoStartRow + 1 + idx;
-
-                    // Column A: Reason Name
-                    ws.getCell(rowNum, 1).value = reason;
-                    ws.getCell(rowNum, 1).border = borderStyle;
-
-                    // Column B: HLOOKUP Formula (lookup reason in header row 3, get value from row 7)
-                    // Formula: =HLOOKUP(A18,$M$3:$lastCol$7,5,FALSE)
-                    ws.getCell(rowNum, 2).value = { formula: `HLOOKUP(A${rowNum},$M$3:$${lastColLetter}$7,5,FALSE)` };
-                    ws.getCell(rowNum, 2).border = borderStyle;
-                    ws.getCell(rowNum, 2).numFmt = '0';
-
-                    // Column C: Percentage Formula
-                    ws.getCell(rowNum, 3).value = { formula: `IFERROR(B${rowNum}/SUM(${sumRange}),0)` };
-                    ws.getCell(rowNum, 3).border = borderStyle;
-                    ws.getCell(rowNum, 3).numFmt = '0.00%';
-
-                    // Column D: Cumulative Percentage
-                    if (idx === 0) {
-                        ws.getCell(rowNum, 4).value = { formula: `C${rowNum}` };
-                    } else {
-                        ws.getCell(rowNum, 4).value = { formula: `D${rowNum - 1}+C${rowNum}` };
-                    }
-                    ws.getCell(rowNum, 4).border = borderStyle;
-                    ws.getCell(rowNum, 4).numFmt = '0.00%';
+                const imHeaders = ['Reason', 'KG', '%', 'Cumulative'];
+                imHeaders.forEach((h, i) => {
+                    const cell = ws.getCell(startRow + 1, 1 + i);
+                    cell.value = h;
+                    cell.fill = greyFill;
+                    cell.font = { bold: true };
+                    cell.border = borderStyle;
+                    cell.alignment = { horizontal: 'center' };
                 });
 
-                // Set row heights for new sections
+                // --- BM TABLE (Columns F-I) ---
+                ws.mergeCells(`F${startRow}:I${startRow}`);
+                ws.getCell(`F${startRow}`).value = "BM Machine Loss Analysis";
+                ws.getCell(`F${startRow}`).fill = headerBlue;
+                ws.getCell(`F${startRow}`).font = fontWhite;
+                ws.getCell(`F${startRow}`).alignment = { horizontal: 'center' };
+
+                imHeaders.forEach((h, i) => {
+                    const cell = ws.getCell(startRow + 1, 6 + i);
+                    cell.value = h;
+                    cell.fill = greyFill;
+                    cell.font = { bold: true };
+                    cell.border = borderStyle;
+                    cell.alignment = { horizontal: 'center' };
+                });
+
+                // --- DATA ROWS ---
+                const dataStartRow = startRow + 2;
+                const endRow = dataStartRow + REASONS.length - 1;
+
+                const imSumRange = `$B$${dataStartRow}:$B$${endRow}`;
+                const bmSumRange = `$G$${dataStartRow}:$G$${endRow}`;
+
+                REASONS.forEach((reason, idx) => {
+                    const r = dataStartRow + idx;
+
+                    // --- IM DATA ---
+                    ws.getCell(r, 1).value = reason;
+                    ws.getCell(r, 1).border = borderStyle;
+                    ws.getCell(r, 2).value = { formula: `HLOOKUP(A${r},$N$3:$${lastColLetter}$6,3,FALSE)` };
+                    ws.getCell(r, 2).numFmt = '0.00';
+                    ws.getCell(r, 2).border = borderStyle;
+                    ws.getCell(r, 3).value = { formula: `IFERROR(B${r}/SUM(${imSumRange}),0)` };
+                    ws.getCell(r, 3).numFmt = '0.00%';
+                    ws.getCell(r, 3).border = borderStyle;
+                    if (idx === 0) ws.getCell(r, 4).value = { formula: `C${r}` };
+                    else ws.getCell(r, 4).value = { formula: `D${r - 1}+C${r}` };
+                    ws.getCell(r, 4).numFmt = '0.00%';
+                    ws.getCell(r, 4).border = borderStyle;
+
+                    // --- BM DATA ---
+                    ws.getCell(r, 6).value = reason;
+                    ws.getCell(r, 6).border = borderStyle;
+                    ws.getCell(r, 7).value = { formula: `HLOOKUP(F${r},$N$3:$${lastColLetter}$6,4,FALSE)` };
+                    ws.getCell(r, 7).numFmt = '0.00';
+                    ws.getCell(r, 7).border = borderStyle;
+                    ws.getCell(r, 8).value = { formula: `IFERROR(G${r}/SUM(${bmSumRange}),0)` };
+                    ws.getCell(r, 8).numFmt = '0.00%';
+                    ws.getCell(r, 8).border = borderStyle;
+                    if (idx === 0) ws.getCell(r, 9).value = { formula: `H${r}` };
+                    else ws.getCell(r, 9).value = { formula: `I${r - 1}+H${r}` };
+                    ws.getCell(r, 9).numFmt = '0.00%';
+                    ws.getCell(r, 9).border = borderStyle;
+                });
+
+                // Set row heights
                 ws.getRow(9).height = 15.75;
                 for (let r = 10; r <= 13; r++) ws.getRow(r).height = 15.75;
-                for (let r = paretoStartRow; r <= endParetoRow; r++) ws.getRow(r).height = 15.75;
-
-                // --- D. Embed Chart Image ---
-                if (chartImage) {
-                    const imageId = workbook.addImage({
-                        base64: chartImage,
-                        extension: 'png',
-                    });
-                    // Position similar to VBA: F17 onwards
-                    ws.addImage(imageId, {
-                        tl: { col: 5.5, row: 16 }, // F17 (0-indexed col 5, row 16)
-                        ext: { width: 700, height: 350 }
-                    });
-                }
+                for (let r = startRow; r <= endRow; r++) ws.getRow(r).height = 15.75;
             };
 
             // Create/Overwrite Daily Sheets
             const [y, m] = currentDate.split('-');
             const daysInMonth = new Date(parseInt(y), parseInt(m), 0).getDate();
 
-            // Function to safely get or add worksheet
             const getOrAddSheet = (name: string) => {
                 const existing = workbook.getWorksheet(name);
-                if (existing) {
-                    // If template has daily sheets, we might want to clear them or overwrite. 
-                    // For now, assume template only has Summary or we overwrite values.
-                    return existing;
-                }
+                if (existing) return existing;
                 return workbook.addWorksheet(name, { views: [{ showGridLines: false }] });
             };
 
@@ -396,24 +387,14 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 const ws = getOrAddSheet(String(d));
                 setupTableLayout(ws, d, false);
             }
-            // Handle Summary Sheet
+            
             let summaryWs = workbook.getWorksheet("Summary");
             if (!summaryWs) {
                 summaryWs = workbook.addWorksheet("Summary", { views: [{ showGridLines: false }] });
             }
 
-            // If template was loaded, we assume layout is good, but we still populating data.
-            // However, our setupTableLayout does formatting. 
-            // To ensure we don't break the chart references, we should run setupTableLayout 
-            // BUT be careful about clearing content. 
-            // NOTE: setupTableLayout mainly sets values and borders. It doesn't delete rows.
             setupTableLayout(summaryWs, 0, true);
-
-            // We still add the section data (Pareto etc). 
-            // If the template already has the table headers, this will overwrite them with same text, which is fine.
-            // IMPORTANT: The chart in template likely points to specific cells. 
-            // setupTableLayout + addSummarySections writes to those exact cells.
-            addSummarySections(summaryWs, chartImageBase64);
+            addSummarySections(summaryWs);
 
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -421,7 +402,7 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
         } catch (error) { console.error("Excel Generation Error:", error); alert("Failed to generate Excel report."); } finally { setIsGenerating(false); }
     };
 
-    // --- TABLE RENDER FUNCTION ---
+    // --- TABLE RENDER FUNCTION (Screen View) ---
     const renderTable = (isSummary: boolean, dayIndex: number = 0) => {
         let data = { im: { dP: 0, dA: 0, nP: 0, nA: 0, effLoss: 0 }, bm: { dP: 0, dA: 0, nP: 0, nA: 0, effLoss: 0 } };
         let breakdownData: any = {};
@@ -447,7 +428,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
             REASONS.forEach(res => { breakdownData[res].im = getBreakdownLoss(dayD.dateStr, 'IM', res); breakdownData[res].bm = getBreakdownLoss(dayD.dateStr, 'BM', res); });
         }
 
-        // --- CALCULATE ROW METRICS ---
         const calcRow = (base: { dP: number, dA: number, nP: number, nA: number, effLoss: number }, type: 'IM' | 'BM') => {
             const planKg = base.dP + base.nP;
             const prodKg = base.dA + base.nA;
@@ -468,85 +448,21 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
             eff: (imR.planKg + bmR.planKg) > 0 ? ((imR.prodKg + bmR.prodKg) / (imR.planKg + bmR.planKg)) * 100 : 0
         };
 
-        // --- SUMMARY METRICS CALCULATION ---
-        const totalPlan = globalR.planKg;
-        const totalProd = globalR.prodKg;
-        const totalLost = globalR.lostKg;
-
-        // Schedule Table Data
-        const daysInMonth = isSummary ? new Date(parseInt(currentDate.split('-')[0]), parseInt(currentDate.split('-')[1]), 0).getDate() : 0;
-        const avgPerDayGlobal = daysInMonth > 0 ? totalProd / daysInMonth : 0;
-        const avgPerDayIM = daysInMonth > 0 ? imR.prodKg / daysInMonth : 0;
-        const avgPerDayBM = daysInMonth > 0 ? bmR.prodKg / daysInMonth : 0;
-
-        // --- CALCULATE ACTUAL WORKING DAYS (0.5 per shift) ---
-        let workingDaysIM = 0;
-        let workingDaysBM = 0;
-        if (isSummary) {
-            const [year, month] = currentDate?.split('-') || ['2025', '01'];
-            const totalDays = new Date(parseInt(year), parseInt(month), 0).getDate();
-            for (let i = 1; i <= totalDays; i++) {
-                const dayData = getDayData(i);
-                // IM: 0.5 for each shift with production
-                if (dayData.im.dA > 0) workingDaysIM += 0.5;
-                if (dayData.im.nA > 0) workingDaysIM += 0.5;
-                // BM: 0.5 for each shift with production
-                if (dayData.bm.dA > 0) workingDaysBM += 0.5;
-                if (dayData.bm.nA > 0) workingDaysBM += 0.5;
-            }
-        }
-        const workingDaysTotal = Math.max(workingDaysIM, workingDaysBM);
-
-        // --- SEPARATE PARETO DATA FOR IM AND BM ---
-        // IM Pareto Data
-        const paretoIMData = REASONS.map(r => ({
-            name: r,
-            kg: breakdownData[r].im
-        })).sort((a, b) => b.kg - a.kg);
-
+        const chartRef = useRef<HTMLDivElement>(null);
+        const paretoIMData = REASONS.map(r => ({ name: r, kg: breakdownData[r].im })).sort((a, b) => b.kg - a.kg);
         const totalIMKg = paretoIMData.reduce((acc, curr) => acc + curr.kg, 0);
         let cumulativeIM = 0;
         const paretoIMChartData = paretoIMData.map(item => {
             cumulativeIM += item.kg;
-            return {
-                ...item,
-                cumulativePkg: totalIMKg > 0 ? (cumulativeIM / totalIMKg) * 100 : 0,
-                pkg: totalIMKg > 0 ? (item.kg / totalIMKg) * 100 : 0
-            };
+            return { ...item, cumulativePkg: totalIMKg > 0 ? (cumulativeIM / totalIMKg) * 100 : 0, pkg: totalIMKg > 0 ? (item.kg / totalIMKg) * 100 : 0 };
         });
 
-        // BM Pareto Data
-        const paretoBMData = REASONS.map(r => ({
-            name: r,
-            kg: breakdownData[r].bm
-        })).sort((a, b) => b.kg - a.kg);
-
+        const paretoBMData = REASONS.map(r => ({ name: r, kg: breakdownData[r].bm })).sort((a, b) => b.kg - a.kg);
         const totalBMKg = paretoBMData.reduce((acc, curr) => acc + curr.kg, 0);
         let cumulativeBM = 0;
         const paretoBMChartData = paretoBMData.map(item => {
             cumulativeBM += item.kg;
-            return {
-                ...item,
-                cumulativePkg: totalBMKg > 0 ? (cumulativeBM / totalBMKg) * 100 : 0,
-                pkg: totalBMKg > 0 ? (item.kg / totalBMKg) * 100 : 0
-            };
-        });
-
-        // Combined Pareto Data (for reference)
-        const paretoData = REASONS.map(r => ({
-            name: r,
-            kg: breakdownData[r].im + breakdownData[r].bm
-        })).sort((a, b) => b.kg - a.kg);
-
-        const totalBreakdownKg = paretoData.reduce((acc, curr) => acc + curr.kg, 0);
-        let cumulative = 0;
-        const paretoChartData = paretoData.map(item => {
-            cumulative += item.kg;
-            return {
-                ...item,
-                cumulativePkg: totalBreakdownKg > 0 ? (cumulative / totalBreakdownKg) * 100 : 0,
-                pkg: totalBreakdownKg > 0 ? (item.kg / totalBreakdownKg) * 100 : 0
-            };
+            return { ...item, cumulativePkg: totalBMKg > 0 ? (cumulativeBM / totalBMKg) * 100 : 0, pkg: totalBMKg > 0 ? (item.kg / totalBMKg) * 100 : 0 };
         });
 
         const Th = ({ children, rowSpan = 1, colSpan = 1, className = '' }: any) => <th rowSpan={rowSpan} colSpan={colSpan} className={`border border-slate-300 dark:border-slate-600 bg-[#d9d9d9] dark:bg-slate-700 text-slate-800 dark:text-white text-xs font-bold text-center p-1 px-2 ${className}`}>{children}</th>;
@@ -554,7 +470,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
 
         return (
             <div className="space-y-8">
-                {/* Main Data Table */}
                 <div className="overflow-x-auto custom-scrollbar rounded-xl border border-slate-300 shadow-sm bg-white dark:bg-slate-800">
                     <table className="w-full border-collapse min-w-[2000px]">
                         <thead>
@@ -632,106 +547,33 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
 
                 {isSummary && (
                     <div className="space-y-8">
-                        {/* Schedule & Production Summary Row */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Schedule Table */}
-                            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-300 dark:border-slate-600 overflow-hidden">
-                                <table className="w-full text-sm border-collapse">
-                                    <thead>
-                                        <tr>
-                                            <th className="p-2 text-left border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-bold text-slate-800 dark:text-white">Schedule</th>
-                                            <th className="p-2 text-right border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-bold text-slate-800 dark:text-white w-24">AOP</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Working Days</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#305496] text-white font-bold">{workingDaysTotal}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average Per Day (Kg)</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysTotal > 0 ? globalR.prodKg / workingDaysTotal : 0).toFixed(1)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average per day(Kg)-IM</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysIM > 0 ? imR.prodKg / workingDaysIM : 0).toFixed(1)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average per day(Kg)-BM</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysBM > 0 ? bmR.prodKg / workingDaysBM : 0).toFixed(1)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Production Table */}
-                            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-300 dark:border-slate-600 overflow-hidden">
-                                <table className="w-full text-sm border-collapse">
-                                    <thead>
-                                        <tr>
-                                            <th className="p-2 text-left border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-bold text-slate-800 dark:text-white">Production</th>
-                                            <th className="p-2 text-right border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-bold text-slate-800 dark:text-white w-24">AOP</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Working Days</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{workingDaysTotal}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average Per Day (Kg)</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysTotal > 0 ? globalR.prodKg / workingDaysTotal : 0).toFixed(1)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average per day(Kg)-IM</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysIM > 0 ? imR.prodKg / workingDaysIM : 0).toFixed(1)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 bg-[#e7e6e6] dark:bg-slate-700 font-medium text-slate-800 dark:text-white">Average per day(Kg)-BM</td>
-                                            <td className="p-2 border border-slate-300 dark:border-slate-600 text-right bg-[#203764] text-white font-bold">{(workingDaysBM > 0 ? bmR.prodKg / workingDaysBM : 0).toFixed(1)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* IM Loss Reason Analysis */}
+                         {/* IM Loss Reason Analysis (Screen View) */}
                         <div className="bg-gradient-to-br from-emerald-50 to-white dark:from-slate-800 dark:to-slate-900 rounded-2xl border-2 border-emerald-200 dark:border-emerald-800 shadow-lg overflow-hidden">
                             <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-3">
                                 <h4 className="font-bold text-sm uppercase tracking-wider">📊 IM Machine - Loss Reason Analysis (Pareto)</h4>
                             </div>
                             <div className="p-4 flex flex-col lg:flex-row gap-6">
-                                {/* IM Pareto Table */}
                                 <div className="lg:w-1/3 overflow-auto max-h-[400px]">
                                     <table className="w-full text-xs border-collapse">
                                         <thead className="bg-emerald-100 dark:bg-emerald-900/50 sticky top-0">
-                                            <tr>
-                                                <th className="p-2 text-left border border-emerald-200 dark:border-emerald-700 font-bold text-emerald-800 dark:text-emerald-300">Reason</th>
-                                                <th className="p-2 text-right border border-emerald-200 dark:border-emerald-700 font-bold text-emerald-800 dark:text-emerald-300">KG</th>
-                                                <th className="p-2 text-right border border-emerald-200 dark:border-emerald-700 font-bold text-emerald-800 dark:text-emerald-300">%</th>
-                                                <th className="p-2 text-right border border-emerald-200 dark:border-emerald-700 font-bold text-emerald-800 dark:text-emerald-300">Cum %</th>
-                                            </tr>
+                                            <tr><th className="p-2 text-left">Reason</th><th className="p-2 text-right">KG</th><th className="p-2 text-right">%</th><th className="p-2 text-right">Cum %</th></tr>
                                         </thead>
                                         <tbody>
                                             {paretoIMChartData.map((row, i) => (
                                                 <tr key={i} className={i % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-emerald-50/50 dark:bg-slate-700/50'}>
-                                                    <td className="p-2 border border-emerald-100 dark:border-emerald-800 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">{row.name}</td>
-                                                    <td className="p-2 border border-emerald-100 dark:border-emerald-800 text-right font-bold text-slate-800 dark:text-white">{row.kg.toFixed(2)}</td>
-                                                    <td className="p-2 border border-emerald-100 dark:border-emerald-800 text-right text-emerald-600 dark:text-emerald-400">{row.pkg.toFixed(1)}%</td>
-                                                    <td className="p-2 border border-emerald-100 dark:border-emerald-800 text-right text-amber-600 dark:text-amber-400">{row.cumulativePkg.toFixed(1)}%</td>
+                                                    <td className="p-2 font-medium">{row.name}</td><td className="p-2 text-right font-bold">{row.kg.toFixed(2)}</td><td className="p-2 text-right text-emerald-600">{row.pkg.toFixed(1)}%</td><td className="p-2 text-right text-amber-600">{row.cumulativePkg.toFixed(1)}%</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
-                                {/* IM Chart */}
                                 <div className="lg:w-2/3 h-[350px]" ref={chartRef}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <ComposedChart data={paretoIMChartData} margin={{ top: 20, right: 40, left: 20, bottom: 80 }}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ef" />
-                                            <XAxis dataKey="name" interval={0} angle={-45} textAnchor="end" height={100} tick={{ fontSize: 9, fill: '#475569' }} />
-                                            <YAxis yAxisId="left" orientation="left" stroke="#10b981" label={{ value: 'KG', angle: -90, position: 'insideLeft', fill: '#10b981' }} />
-                                            <YAxis yAxisId="right" orientation="right" stroke="#f97316" domain={[0, 100]} label={{ value: 'Cum %', angle: 90, position: 'insideRight', fill: '#f97316' }} />
+                                            <XAxis dataKey="name" interval={0} angle={-45} textAnchor="end" height={100} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} />
+                                            <YAxis yAxisId="left" orientation="left" stroke="#10b981" label={{ value: 'KG', angle: -90, position: 'insideLeft', fill: '#10b981' }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                                            <YAxis yAxisId="right" orientation="right" stroke="#f97316" domain={[0, 100]} label={{ value: 'Cum %', angle: 90, position: 'insideRight', fill: '#f97316' }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
                                             <Legend wrapperStyle={{ paddingTop: '10px' }} />
                                             <Bar yAxisId="left" dataKey="kg" fill="#10b981" name="Loss (KG)" barSize={25} radius={[4, 4, 0, 0]} />
@@ -742,43 +584,33 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                             </div>
                         </div>
 
-                        {/* BM Loss Reason Analysis */}
+                         {/* BM Loss Reason Analysis (Screen View) */}
                         <div className="bg-gradient-to-br from-amber-50 to-white dark:from-slate-800 dark:to-slate-900 rounded-2xl border-2 border-amber-200 dark:border-amber-800 shadow-lg overflow-hidden">
                             <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-3">
                                 <h4 className="font-bold text-sm uppercase tracking-wider">📊 BM Machine - Loss Reason Analysis (Pareto)</h4>
                             </div>
                             <div className="p-4 flex flex-col lg:flex-row gap-6">
-                                {/* BM Pareto Table */}
                                 <div className="lg:w-1/3 overflow-auto max-h-[400px]">
                                     <table className="w-full text-xs border-collapse">
                                         <thead className="bg-amber-100 dark:bg-amber-900/50 sticky top-0">
-                                            <tr>
-                                                <th className="p-2 text-left border border-amber-200 dark:border-amber-700 font-bold text-amber-800 dark:text-amber-300">Reason</th>
-                                                <th className="p-2 text-right border border-amber-200 dark:border-amber-700 font-bold text-amber-800 dark:text-amber-300">KG</th>
-                                                <th className="p-2 text-right border border-amber-200 dark:border-amber-700 font-bold text-amber-800 dark:text-amber-300">%</th>
-                                                <th className="p-2 text-right border border-amber-200 dark:border-amber-700 font-bold text-amber-800 dark:text-amber-300">Cum %</th>
-                                            </tr>
+                                            <tr><th className="p-2 text-left">Reason</th><th className="p-2 text-right">KG</th><th className="p-2 text-right">%</th><th className="p-2 text-right">Cum %</th></tr>
                                         </thead>
                                         <tbody>
                                             {paretoBMChartData.map((row, i) => (
                                                 <tr key={i} className={i % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-amber-50/50 dark:bg-slate-700/50'}>
-                                                    <td className="p-2 border border-amber-100 dark:border-amber-800 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">{row.name}</td>
-                                                    <td className="p-2 border border-amber-100 dark:border-amber-800 text-right font-bold text-slate-800 dark:text-white">{row.kg.toFixed(2)}</td>
-                                                    <td className="p-2 border border-amber-100 dark:border-amber-800 text-right text-amber-600 dark:text-amber-400">{row.pkg.toFixed(1)}%</td>
-                                                    <td className="p-2 border border-amber-100 dark:border-amber-800 text-right text-orange-600 dark:text-orange-400">{row.cumulativePkg.toFixed(1)}%</td>
+                                                    <td className="p-2 font-medium">{row.name}</td><td className="p-2 text-right font-bold">{row.kg.toFixed(2)}</td><td className="p-2 text-right text-amber-600">{row.pkg.toFixed(1)}%</td><td className="p-2 text-right text-orange-600">{row.cumulativePkg.toFixed(1)}%</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
-                                {/* BM Chart */}
                                 <div className="lg:w-2/3 h-[350px]">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <ComposedChart data={paretoBMChartData} margin={{ top: 20, right: 40, left: 20, bottom: 80 }}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#fde68a" />
-                                            <XAxis dataKey="name" interval={0} angle={-45} textAnchor="end" height={100} tick={{ fontSize: 9, fill: '#92400e' }} />
-                                            <YAxis yAxisId="left" orientation="left" stroke="#f59e0b" label={{ value: 'KG', angle: -90, position: 'insideLeft', fill: '#f59e0b' }} />
-                                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" domain={[0, 100]} label={{ value: 'Cum %', angle: 90, position: 'insideRight', fill: '#dc2626' }} />
+                                            <XAxis dataKey="name" interval={0} angle={-45} textAnchor="end" height={100} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} />
+                                            <YAxis yAxisId="left" orientation="left" stroke="#f59e0b" label={{ value: 'KG', angle: -90, position: 'insideLeft', fill: '#f59e0b' }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" domain={[0, 100]} label={{ value: 'Cum %', angle: 90, position: 'insideRight', fill: '#dc2626' }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                                             <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #fde68a' }} />
                                             <Legend wrapperStyle={{ paddingTop: '10px' }} />
                                             <Bar yAxisId="left" dataKey="kg" fill="#f59e0b" name="Loss (KG)" barSize={25} radius={[4, 4, 0, 0]} />
@@ -796,7 +628,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
 
     return (
         <div className="space-y-6 animate-fade-in pb-10">
-            {/* HEADER */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm gap-4">
                 <div>
                     <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-3">
@@ -810,7 +641,6 @@ const MonthlyDetailedView: React.FC<Props> = ({ dailyData, monthTotals, allData,
                 </button>
             </div>
 
-            {/* TABS */}
             <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="flex overflow-x-auto custom-scrollbar border-b border-slate-200 dark:border-slate-700 p-2 gap-2 bg-slate-50 dark:bg-slate-900/50">
                     <button onClick={() => setActiveTab('Summary')} className={`flex-shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all ${activeTab === 'Summary' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'}`}>

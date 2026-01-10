@@ -1,7 +1,18 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ProductionRow, AdminConfig } from '../types';
 import { calculateMetrics } from '../utils';
-import { Trash2, Activity, ChevronDown, PenLine, Database } from 'lucide-react';
+import {
+  Trash2,
+  Activity,
+  ChevronDown,
+  PenLine,
+  Database,
+  Clock,
+  Settings,
+  Package,
+  AlertTriangle,
+  Zap
+} from 'lucide-react';
 
 interface Props {
   rows: ProductionRow[];
@@ -12,159 +23,232 @@ interface Props {
   isFormMode?: boolean;
 }
 
-const ProductionTable: React.FC<Props> = ({ rows, onUpdateRow, onDeleteRow, onOpenBreakdowns, adminConfig, isFormMode }) => {
+// --- OPTIMIZED INPUT COMPONENT ---
+const TableInput = ({ value, onSave, placeholder, className, type = 'text' }: any) => {
+  const [localValue, setLocalValue] = useState(value);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setLocalValue(value === 0 ? '' : value.toString());
+    }
+  }, [value, isEditing]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (type === 'number') {
+        if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalValue(v);
+    } else {
+        setLocalValue(v);
+    }
+  };
+
+  const commitChanges = () => {
+    setIsEditing(false);
+    let finalVal = localValue;
+    if (type === 'number') {
+        if (!finalVal || finalVal === '' || finalVal === '.') finalVal = '0';
+        const numVal = parseFloat(finalVal);
+        if (numVal !== value) onSave(numVal);
+    } else {
+        if (finalVal !== value) onSave(finalVal);
+    }
+  };
+
+  const handleBlur = () => commitChanges();
   
-  // FIX: Access 'productionItems' instead of 'machineMappings'
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') e.currentTarget.blur();
+  };
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setIsEditing(true);
+    e.target.select();
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode={type === 'number' ? 'decimal' : 'text'}
+      value={localValue === 0 && !isEditing ? '' : localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onFocus={handleFocus}
+      onKeyDown={handleKeyDown}
+      className={className}
+      placeholder={placeholder}
+    />
+  );
+};
+
+const ProductionTable: React.FC<Props> = ({
+  rows,
+  onUpdateRow,
+  onDeleteRow,
+  onOpenBreakdowns,
+  adminConfig,
+  isFormMode,
+}) => {
   const allItems = adminConfig?.productionItems || [];
-  
-  // Get Unique Machine list
-  const uniqueMachines = Array.from(new Set(allItems.map(m => m.machine))).sort();
+  const uniqueMachines = Array.from(new Set(allItems.map((m) => m.machine))).sort();
+
+  const styles = `
+    .electric-btn-container { position: relative; display: inline-block; width: 100%; height: 100%; overflow: hidden; border-radius: 0.5rem; background: #0f172a; }
+    .electric-btn-container span { position: absolute; display: block; }
+    .electric-btn-container span:nth-child(1) { top: 0; left: -100%; width: 100%; height: 2px; background: linear-gradient(90deg, transparent, #00f2ff, #00f2ff); animation: btn-anim1 1.5s linear infinite; }
+    .electric-btn-container span:nth-child(2) { top: -100%; right: 0; width: 2px; height: 100%; background: linear-gradient(180deg, transparent, #00f2ff, #00f2ff); animation: btn-anim2 1.5s linear infinite; animation-delay: 0.375s; }
+    .electric-btn-container span:nth-child(3) { bottom: 0; right: -100%; width: 100%; height: 2px; background: linear-gradient(270deg, transparent, #00f2ff, #00f2ff); animation: btn-anim3 1.5s linear infinite; animation-delay: 0.75s; }
+    .electric-btn-container span:nth-child(4) { bottom: -100%; left: 0; width: 2px; height: 100%; background: linear-gradient(360deg, transparent, #00f2ff, #00f2ff); animation: btn-anim4 1.5s linear infinite; animation-delay: 1.125s; }
+    @keyframes btn-anim1 { 0% { left: -100%; } 50%, 100% { left: 100%; } }
+    @keyframes btn-anim2 { 0% { top: -100%; } 50%, 100% { top: 100%; } }
+    @keyframes btn-anim3 { 0% { right: -100%; } 50%, 100% { right: 100%; } }
+    @keyframes btn-anim4 { 0% { bottom: -100%; } 50%, 100% { bottom: 100%; } }
+    .electric-btn-content { position: absolute; inset: 2px; background: #1e293b; border-radius: 0.4rem; z-index: 10; display: flex; align-items: center; justify-content: center; gap: 0.5rem; color: #38bdf8; font-weight: 900; text-transform: uppercase; font-size: 0.6rem; transition: all 0.3s; }
+    .electric-btn-container:hover .electric-btn-content { background: #0f172a; box-shadow: 0 0 10px #00f2ff, 0 0 20px #00f2ff; color: #fff; }
+    :root:not(.dark) .electric-btn-content { background: #f8fafc; color: #0284c7; }
+    :root:not(.dark) .electric-btn-container:hover .electric-btn-content { background: #e0f2fe; }
+    
+    /* HIDE DEFAULT SELECT ARROW */
+    select.custom-select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: none; 
+    }
+    select.custom-select::-ms-expand { display: none; }
+    
+    select.custom-select option { background-color: #ffffff; color: #1e293b; }
+    :root.dark select.custom-select option { background-color: #1e293b; color: #f1f5f9; }
+  `;
 
   if (rows.length === 0) {
     return (
-      <div className="p-12 text-center rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/30 flex flex-col items-center justify-center gap-4 shadow-inner transition-colors">
-        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isFormMode ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-300' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-300'}`}>
-          {isFormMode ? <PenLine className="w-7 h-7" /> : <Database className="w-7 h-7" />}
+      <div className="p-8 text-center rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/30 flex flex-col items-center justify-center gap-3 animate-fade-in my-4">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isFormMode ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-400' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-400'}`}>
+          {isFormMode ? <PenLine className="w-6 h-6" /> : <Database className="w-6 h-6" />}
         </div>
         <div>
-          <p className="text-slate-600 dark:text-slate-400 font-black uppercase text-xs tracking-[0.2em]">{isFormMode ? 'Shift Is Empty' : 'No Data Records'}</p>
-          <p className="text-slate-400 dark:text-slate-600 text-[10px] font-bold mt-1">Add a new row to this section to start recording</p>
+          <p className="text-slate-600 dark:text-slate-400 font-black uppercase text-[10px] tracking-[0.2em]">{isFormMode ? 'Shift Ready' : 'No Records'}</p>
+          <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold">Add a row to start.</p>
         </div>
       </div>
     );
   }
 
-  // UPDATED: No internal scroll (max-h removed), so it scrolls with the page
   return (
-    <div className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-xl shadow-slate-200/40 dark:shadow-black/40 overflow-hidden overflow-x-auto custom-scrollbar transition-colors duration-300">
-      <table className="w-full text-left text-[11px] min-w-[2000px] border-collapse">
-        <thead>
-          <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center h-14 transition-colors">
-            <th className="px-2 w-24 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Start</th>
-            <th className="px-2 w-24 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">End</th>
-            <th className="px-2 w-28 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Machine</th>
-            <th className="px-2 w-64 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300 text-left pl-4">Product / Job</th>
-            <th className="px-2 w-16 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Wt(g)</th>
-            <th className="px-2 w-16 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Q/Hr</th>
-            <th className="px-2 w-12 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Cav</th>
-            
-            <th className="px-2 w-16 text-slate-400 dark:text-slate-500">Cycle</th>
-            <th className="px-2 w-16 text-slate-400 dark:text-slate-500">Hr</th>
-            
-            <th className="px-2 w-20 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Plan Qty</th>
-            <th className="px-2 w-20 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400">Achv Qty</th>
-            
-            {!isFormMode && <th className="px-2 w-20 bg-orange-50/50 dark:bg-orange-900/10 text-orange-800 dark:text-orange-300">Plan Kg</th>}
-            {!isFormMode && <th className="px-2 w-20 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400">Achv Kg</th>}
-            
-            <th className="px-2 w-20 bg-rose-50/30 dark:bg-rose-900/10 text-rose-700 dark:text-rose-400">Lost Qty</th>
-            
-            {!isFormMode && <th className="px-2 w-20 bg-rose-50/30 dark:bg-rose-900/10 text-rose-700 dark:text-rose-400">Lost Kg</th>}
-            {!isFormMode && <th className="px-2 w-20 bg-yellow-50/50 dark:bg-yellow-900/10 text-amber-700 dark:text-amber-400">BD (Kg)</th>}
-            
-            <th className="px-2 w-24 bg-yellow-50/50 dark:bg-yellow-900/10 text-amber-700 dark:text-amber-400">
-                {isFormMode ? 'Eff Los Qty' : 'Eff Los (Kg)'}
-            </th>
-            
-            <th className="px-2 w-32">Breakdowns</th>
-            <th className="px-2 w-16"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-50 dark:divide-slate-800 text-center">
-          {rows.map(row => {
-            const m = calculateMetrics(row);
-            const machineItems = allItems.filter(item => item.machine === row.machine);
+    <div className="space-y-3 pb-10">
+      <style>{styles}</style>
+      {rows.map((row) => {
+        const m = calculateMetrics(row);
+        const machineItems = allItems.filter((item) => item.machine === row.machine);
 
-            return (
-              <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-all group/row h-14 text-slate-700 dark:text-slate-300">
-                
-                <td className="p-1"><input type="time" value={row.startTime} onChange={e => onUpdateRow(row.id, { startTime: e.target.value })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 dark:[color-scheme:dark]" /></td>
-                <td className="p-1"><input type="time" value={row.endTime} onChange={e => onUpdateRow(row.id, { endTime: e.target.value })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 dark:[color-scheme:dark]" /></td>
-                
-                {/* MACHINE DROPDOWN STYLED */}
-                <td className="p-1 relative">
-                   <div className="relative group/select">
-                      <select 
-                        value={row.machine} 
-                        onChange={e => onUpdateRow(row.id, { machine: e.target.value })}
-                        className="w-full text-center font-black uppercase text-indigo-600 dark:text-indigo-400 bg-slate-50 dark:bg-slate-900 border border-transparent dark:border-slate-700 focus:bg-white dark:focus:bg-slate-950 focus:shadow-md rounded-lg py-1.5 outline-none appearance-none cursor-pointer"
-                      >
-                         <option value="">MAC</option>
-                         {uniqueMachines.length > 0 ? (
-                           uniqueMachines.map(m => <option key={m} value={m}>{m}</option>)
-                         ) : (
-                           ['Select Admin'].map(m => <option key={m} value={m}>{m}</option>)
-                         )}
-                      </select>
-                   </div>
-                </td>
+        return (
+          <div key={row.id} className="group relative bg-white dark:bg-[#0F172A] rounded-2xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-200 animate-fade-in w-full">
+            <button onClick={() => onDeleteRow(row.id)} className="absolute top-2 right-2 p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 border border-transparent hover:border-rose-200 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-20" title="Delete Row"><Trash2 className="w-3.5 h-3.5" /></button>
 
-                <td className="p-1 text-left relative">
-                  <div className="relative group/select">
-                    <select 
-                      value={row.product} 
-                      onChange={e => {
-                        const selected = machineItems.find(i => i.itemName === e.target.value);
-                        onUpdateRow(row.id, { 
-                            product: e.target.value, 
-                            unitWeight: selected ? selected.unitWeight : row.unitWeight 
-                        });
-                      }}
-                      className="w-full py-1.5 pl-2 pr-6 font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none cursor-pointer appearance-none hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 text-xs text-slate-700 dark:text-slate-200"
-                    >
-                      <option value="">{row.machine ? `Select Item...` : 'Select Machine'}</option>
-                      {machineItems.map(item => (
-                          <option key={item.id} value={item.itemName}>
-                              {item.itemName} {item.jobNo ? `(${item.jobNo})` : ''}
-                          </option>
-                      ))}
-                      <option value="Manual Entry">Manual Entry</option>
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-center">
+              
+              {/* 1. TIMELINE & MACHINE */}
+              <div className="xl:col-span-3 space-y-2 xl:border-r border-slate-100 dark:border-slate-800 xl:pr-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Timeline</span>
+                </div>
+                <div className="flex gap-2">
+                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg px-1 py-1 flex-1 border border-slate-100 dark:border-slate-700 text-center">
+                    <input type="time" value={row.startTime} onChange={(e) => onUpdateRow(row.id, { startTime: e.target.value })} className="w-full bg-transparent text-center font-bold text-slate-700 dark:text-slate-200 outline-none text-xs p-0 dark:[color-scheme:dark]" />
                   </div>
-                </td>
+                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg px-1 py-1 flex-1 border border-slate-100 dark:border-slate-700 text-center">
+                    <input type="time" value={row.endTime} onChange={(e) => onUpdateRow(row.id, { endTime: e.target.value })} className="w-full bg-transparent text-center font-bold text-slate-700 dark:text-slate-200 outline-none text-xs p-0 dark:[color-scheme:dark]" />
+                  </div>
+                </div>
+                <div className="relative">
+                  {/* MACHINE DROPDOWN - Custom Class Added */}
+                  <select value={row.machine} onChange={(e) => onUpdateRow(row.id, { machine: e.target.value, product: '' })} 
+                      className="custom-select w-full py-1.5 pl-3 pr-8 bg-indigo-50 dark:bg-indigo-900/20 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-700 rounded-lg text-center font-black text-indigo-700 dark:text-indigo-400 outline-none cursor-pointer text-xs uppercase tracking-wide transition-colors">
+                    <option value="">SELECT MAC</option>
+                    {uniqueMachines.map((mc) => (<option key={mc} value={mc}>{mc}</option>))}
+                  </select>
+                  <Settings className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-indigo-400 opacity-50 pointer-events-none" />
+                </div>
+              </div>
 
-                <td className="p-1"><input type="number" placeholder="0.0" value={row.unitWeight || ''} onChange={e => onUpdateRow(row.id, { unitWeight: Number(e.target.value) })} className="w-full text-center font-black bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1" /></td>
-                <td className="p-1"><input type="number" placeholder="0" value={row.qtyPerHour || ''} onChange={e => onUpdateRow(row.id, { qtyPerHour: Number(e.target.value) })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1" /></td>
-                <td className="p-1"><input type="number" value={row.cavities || ''} onChange={e => onUpdateRow(row.id, { cavities: Number(e.target.value) })} className="w-full text-center font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1" /></td>
-                
-                <td className="p-1"><input type="number" placeholder="0" value={row.cycleTime || ''} onChange={e => onUpdateRow(row.id, { cycleTime: Number(e.target.value) })} className="w-full text-center font-mono font-bold bg-transparent outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 placeholder:text-slate-300" /></td>
+              {/* 2. PRODUCT & SPECS */}
+              <div className="xl:col-span-4 space-y-2 xl:border-r border-slate-100 dark:border-slate-800 xl:pr-3">
+                <div className="flex items-center gap-2">
+                  <Package className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Product</span>
+                </div>
+                <div className="relative">
+                  {/* PRODUCT DROPDOWN - Custom Class Added */}
+                  <select value={row.product} onChange={(e) => { const selected = machineItems.find((i) => i.itemName === e.target.value); onUpdateRow(row.id, { product: e.target.value, unitWeight: selected ? selected.unitWeight : row.unitWeight }); }} 
+                      className="custom-select w-full py-1.5 pl-3 pr-8 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-lg font-bold text-slate-700 dark:text-slate-200 outline-none text-xs truncate transition-all cursor-pointer">
+                    <option value="">{row.machine ? 'Select Product...' : 'Select Machine First'}</option>
+                    {machineItems.map((item) => (<option key={item.id} value={item.itemName}>{item.itemName} {item.jobNo ? `(${item.jobNo})` : ''}</option>))}
+                    <option value="Manual Entry">Manual Entry</option>
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
+                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Wt</label>
+                      <TableInput type="number" value={row.unitWeight} onSave={(v: number) => onUpdateRow(row.id, { unitWeight: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
+                   </div>
+                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
+                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Cyc</label>
+                      <TableInput type="number" value={row.cycleTime || 0} onSave={(v: number) => onUpdateRow(row.id, { cycleTime: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
+                   </div>
+                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
+                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Cav</label>
+                      <TableInput type="number" value={row.cavities} onSave={(v: number) => onUpdateRow(row.id, { cavities: v })} placeholder="1" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
+                   </div>
+                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
+                      <label className="block text-[7px] font-bold text-indigo-400 uppercase mb-0.5">Q/H</label>
+                      <TableInput type="number" value={row.qtyPerHour} onSave={(v: number) => onUpdateRow(row.id, { qtyPerHour: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-indigo-600 dark:text-indigo-400" />
+                   </div>
+                </div>
+              </div>
 
-                <td className="px-2 font-bold text-slate-700 dark:text-slate-300">{m.timeHr}</td>
-                <td className="px-2 font-bold text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-800/30">{m.planQty}</td>
-                
-                <td className="p-1">
-                  <input type="number" placeholder="0" value={row.achievedQty || ''} onChange={e => onUpdateRow(row.id, { achievedQty: Number(e.target.value) })} className="w-full text-center font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/20 outline-none focus:bg-white dark:focus:bg-slate-800 focus:shadow-md rounded-lg py-1 border border-transparent focus:border-emerald-200 dark:focus:border-emerald-700" />
-                </td>
-
-                {!isFormMode && <td className="px-2 font-bold text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-800/30">{m.planKg}</td>}
-                {!isFormMode && <td className="px-2 font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/20">{m.achievedKg}</td>}
-                
-                <td className="px-2 font-bold text-rose-400 dark:text-rose-400">{m.lostQty}</td>
-                
-                {!isFormMode && <td className="px-2 font-bold text-rose-500 dark:text-rose-500">{m.lostKg}</td>}
-                {!isFormMode && <td className="px-2 font-bold text-amber-600 dark:text-amber-500 bg-amber-50/50 dark:bg-amber-900/20">{m.bdLostKg}</td>}
-                
-                <td className="px-2 font-bold text-amber-600 dark:text-amber-500 bg-amber-50/50 dark:bg-amber-900/20">
-                    {isFormMode ? m.efficiencyLossQty : m.efficiencyLossKg}
-                </td>
-
-                <td className="p-1">
-                   <button onClick={() => onOpenBreakdowns(row.id)} className={`w-full py-1.5 rounded-lg flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-wider transition-all ${m.bdMins > 0 ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
-                     <Activity className="w-3 h-3" /> {m.bdMins > 0 ? `${m.bdMins}m` : 'Log'}
-                   </button>
-                </td>
-
-                <td className="px-2 text-right">
-                  <button onClick={() => onDeleteRow(row.id)} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-all opacity-0 group-hover/row:opacity-100">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              {/* 3. OUTPUT & QUALITY */}
+              <div className="xl:col-span-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2"><Activity className="w-3 h-3 text-emerald-500" /><span className="text-[9px] font-black uppercase text-emerald-500 tracking-wider">Output</span></div>
+                  {isFormMode && (<span className="text-[9px] font-black text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Plan: {m.planQty}</span>)}
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-1.5 border-b-2 border-slate-300 dark:border-slate-600">
+                    <span className="block text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase">Gross</span>
+                    <TableInput type="number" value={row.achievedQty} onSave={(v: number) => onUpdateRow(row.id, { achievedQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-300 p-0" />
+                  </div>
+                  <div className="bg-rose-50 dark:bg-rose-950/30 rounded-lg p-1.5 border-b-2 border-rose-200 dark:border-rose-800">
+                    <span className="block text-[7px] font-black text-rose-400 uppercase">Rej</span>
+                    <TableInput type="number" value={row.rejectionQty || 0} onSave={(v: number) => onUpdateRow(row.id, { rejectionQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-rose-600 dark:text-rose-400 outline-none placeholder:text-rose-200 p-0" />
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-1.5 border-b-2 border-amber-200 dark:border-amber-800">
+                    <span className="block text-[7px] font-black text-amber-500 uppercase">Start</span>
+                    <TableInput type="number" value={row.startupQty || 0} onSave={(v: number) => onUpdateRow(row.id, { startupQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-amber-600 dark:text-amber-400 outline-none placeholder:text-amber-200 p-0" />
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-lg p-1.5 border-b-2 border-emerald-300 dark:border-emerald-700 flex flex-col justify-center">
+                    <span className="block text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Good</span>
+                    <div className="font-black text-sm text-emerald-700 dark:text-emerald-300 truncate">{m.acceptedQty}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-12 gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="col-span-6 h-8">
+                    <button onClick={() => onOpenBreakdowns(row.id)} className="w-full h-full relative group outline-none">
+                      {m.bdMins > 0 ? (
+                        <div className="w-full h-full bg-rose-500 rounded-lg flex items-center justify-center gap-2 animate-pulse shadow-md text-white"><AlertTriangle className="w-3 h-3" /><span className="text-[9px] font-black uppercase">{m.bdMins}m Down</span></div>
+                      ) : (
+                        <div className="electric-btn-container"><span></span><span></span><span></span><span></span><div className="electric-btn-content"><Zap className="w-3 h-3" /> Log Breakdown</div></div>
+                      )}
+                    </button>
+                  </div>
+                  <div className="col-span-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg px-1 py-0.5 text-center flex flex-col justify-center border border-amber-100 dark:border-amber-900/30"><span className="text-[7px] font-bold text-amber-600/70 dark:text-amber-400/70 uppercase">Eff Loss</span><span className="text-xs font-black text-amber-600 dark:text-amber-400 leading-none">{m.efficiencyLossQty}</span></div>
+                  <div className="col-span-3 bg-rose-50/50 dark:bg-rose-900/10 rounded-lg px-1 py-0.5 text-center flex flex-col justify-center border border-rose-100 dark:border-rose-900/30"><span className="text-[7px] font-bold text-rose-600/70 dark:text-rose-400/70 uppercase">Loss Kg</span><span className="text-xs font-black text-rose-600 dark:text-rose-400 leading-none">{m.lostKg}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };

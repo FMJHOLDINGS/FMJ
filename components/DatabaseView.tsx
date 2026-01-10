@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ProductionRow } from '../types';
 import { calculateMetrics, getDatesInRange } from '../utils';
-import { Database, User, ChevronDown, ChevronUp, Calendar, Zap, AlertTriangle, Layers, Clock } from 'lucide-react';
+import { Database, User, ChevronDown, ChevronUp, Calendar, Layers } from 'lucide-react';
 
 interface Props {
    startDate: string;
@@ -13,6 +13,7 @@ interface Props {
 }
 
 const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allData, machineFilter, productFilter }) => {
+   // 1. Initialize as empty (Collapsed by default)
    const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
    const reportData = useMemo(() => {
@@ -41,6 +42,12 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
             return {
                planQty: acc.planQty + m.planQty,
                achvQty: acc.achvQty + row.achievedQty,
+               
+               // NEW COLUMNS TOTALS
+               rejQty: acc.rejQty + (row.rejectionQty || 0),
+               startQty: acc.startQty + (row.startupQty || 0),
+               accQty: acc.accQty + m.acceptedQty,
+
                planKg: acc.planKg + m.planKg,
                achvKg: acc.achvKg + m.achievedKg,
                lostQty: acc.lostQty + m.lostQty,
@@ -48,7 +55,10 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                bdLostKg: acc.bdLostKg + m.bdLostKg,
                effLostKg: acc.effLostKg + m.efficiencyLossKg,
             };
-         }, { planQty: 0, achvQty: 0, planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 });
+         }, { 
+             planQty: 0, achvQty: 0, rejQty: 0, startQty: 0, accQty: 0, 
+             planKg: 0, achvKg: 0, lostQty: 0, lostKg: 0, bdLostKg: 0, effLostKg: 0 
+         });
 
          return { date, rows: filteredRows, subTotal, supervisors };
       }).filter(group => group.rows.length > 0);
@@ -56,16 +66,10 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
       return grouped;
    }, [startDate, endDate, machineType, allData, machineFilter, productFilter]);
 
-   React.useEffect(() => {
-      if (reportData.length > 0) {
-         const initialExpanded: Record<string, boolean> = {};
-         reportData.forEach(g => initialExpanded[g.date] = true);
-         // Reset expansion when filters change to show results clearly
-         setExpandedDates(initialExpanded);
-      }
-   }, [machineFilter, productFilter]); // Trigger expand reset only on filter changes
-
-
+   // 2. Collapse all when filters or date range changes
+   useEffect(() => {
+      setExpandedDates({});
+   }, [machineFilter, productFilter, startDate, endDate, machineType]);
 
    const toggleDate = (date: string) => {
       setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }));
@@ -135,9 +139,9 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
          </div>
 
          {/* DAILY CARDS */}
-         <div className="space-y-6">
+         <div className="space-y-4">
             {reportData.map((group) => {
-               const isExpanded = expandedDates[group.date] ?? true;
+               const isExpanded = expandedDates[group.date];
                const eff = group.subTotal.planKg > 0 ? (group.subTotal.achvKg / group.subTotal.planKg) * 100 : 0;
 
                return (
@@ -145,7 +149,7 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                      {/* CARD HEADER */}
                      <div
                         onClick={() => toggleDate(group.date)}
-                        className="bg-slate-50 dark:bg-slate-900/50 p-4 lg:p-6 flex flex-col lg:flex-row items-center justify-between gap-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-b border-slate-200 dark:border-slate-700"
+                        className="bg-slate-50 dark:bg-slate-900/50 p-4 lg:p-5 flex flex-col lg:flex-row items-center justify-between gap-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-b border-slate-200 dark:border-slate-700"
                      >
                         <div className="flex items-center gap-4 w-full lg:w-auto">
                            <div className={`p-3 rounded-xl ${eff >= 90 ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : eff >= 80 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' : 'bg-rose-100 dark:bg-rose-900/30 text-rose-600'}`}>
@@ -154,7 +158,7 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                            <div>
                               <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-2">
                                  {group.date}
-                                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 font-bold">{group.rows.length} records</span>
+                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 font-bold">{group.rows.length} RECORDS</span>
                               </h3>
                               <div className="flex items-center gap-4 text-xs font-bold text-slate-400 mt-1">
                                  <span className="flex items-center gap-1"><User className="w-3 h-3" /> D: {group.supervisors.day}</span>
@@ -164,22 +168,22 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                         </div>
 
                         {/* DAILY SUMMARY STATS */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-6 w-full lg:w-auto">
-                           <div className="text-center">
-                              <div className="text-[10px] font-bold text-slate-400 uppercase">Plan</div>
-                              <div className="font-black text-slate-700 dark:text-slate-300">{group.subTotal.planKg.toFixed(1)}</div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 w-full lg:w-auto text-right md:text-center">
+                           <div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase">Plan</div>
+                              <div className="font-black text-slate-700 dark:text-slate-300 text-lg">{group.subTotal.planKg.toFixed(1)}</div>
                            </div>
-                           <div className="text-center">
-                              <div className="text-[10px] font-bold text-emerald-500 uppercase">Achieved</div>
-                              <div className="font-black text-emerald-600 dark:text-emerald-400">{group.subTotal.achvKg.toFixed(1)}</div>
+                           <div>
+                              <div className="text-[9px] font-bold text-emerald-500 uppercase">Achieved</div>
+                              <div className="font-black text-emerald-600 dark:text-emerald-400 text-lg">{group.subTotal.achvKg.toFixed(1)}</div>
                            </div>
-                           <div className="text-center">
-                              <div className="text-[10px] font-bold text-rose-500 uppercase">Lost</div>
-                              <div className="font-black text-rose-600 dark:text-rose-400">{group.subTotal.lostKg.toFixed(1)}</div>
+                           <div>
+                              <div className="text-[9px] font-bold text-rose-500 uppercase">Lost</div>
+                              <div className="font-black text-rose-600 dark:text-rose-400 text-lg">{group.subTotal.lostKg.toFixed(1)}</div>
                            </div>
-                           <div className="text-center">
-                              <div className="text-[10px] font-bold text-amber-500 uppercase">Eff %</div>
-                              <div className="font-black text-amber-600 dark:text-amber-400">{eff.toFixed(1)}%</div>
+                           <div>
+                              <div className="text-[9px] font-bold text-amber-500 uppercase">Eff %</div>
+                              <div className="font-black text-amber-600 dark:text-amber-400 text-lg">{eff.toFixed(1)}%</div>
                            </div>
                         </div>
 
@@ -201,11 +205,18 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                                     <th className="py-3 px-2 w-16 text-right">Qty/Hr</th>
                                     <th className="py-3 px-2 w-12 text-center">Cav</th>
                                     <th className="py-3 px-2 w-16 text-center text-indigo-500">Time</th>
+                                    
                                     <th className="py-3 px-2 w-20 text-right bg-slate-200/50 dark:bg-slate-800/50">Plan Qty</th>
-                                    <th className="py-3 px-2 w-20 text-right bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400">Achv Qty</th>
+                                    <th className="py-3 px-2 w-20 text-right bg-slate-200/50 dark:bg-slate-800/50">Gross</th>
+                                    
+                                    {/* NEW COLUMNS */}
+                                    <th className="py-3 px-2 w-20 text-right text-rose-500 bg-rose-50/50 dark:bg-rose-900/10">Rejection</th>
+                                    <th className="py-3 px-2 w-20 text-right text-amber-500 bg-amber-50/50 dark:bg-amber-900/10">Startup</th>
+                                    <th className="py-3 px-2 w-20 text-right text-emerald-600 bg-emerald-50/50 dark:bg-emerald-900/10">Accepted</th>
+
                                     <th className="py-3 px-2 w-20 text-right bg-slate-200/50 dark:bg-slate-800/50">Plan Kg</th>
                                     <th className="py-3 px-2 w-20 text-right bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400">Achv Kg</th>
-                                    <th className="py-3 px-2 w-20 text-right text-rose-500 bg-rose-50/50 dark:bg-rose-900/10">Lost Qty</th>
+                                    
                                     <th className="py-3 px-2 w-20 text-right text-rose-500 bg-rose-50/50 dark:bg-rose-900/10">Lost Kg</th>
                                     <th className="py-3 px-2 w-20 text-right text-amber-500">BD Loss</th>
                                     <th className="py-3 px-2 w-20 text-right text-amber-500">Eff Loss</th>
@@ -230,12 +241,16 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                                           <td className="py-2.5 px-2 text-center font-mono text-indigo-500">{m.timeHr}</td>
 
                                           <td className="py-2.5 px-2 text-right font-medium text-slate-500 bg-slate-50 dark:bg-slate-800/30">{m.planQty}</td>
-                                          <td className="py-2.5 px-2 text-right font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/5">{row.achievedQty}</td>
+                                          <td className="py-2.5 px-2 text-right font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/30">{row.achievedQty}</td>
+                                          
+                                          {/* NEW COLUMNS DATA */}
+                                          <td className="py-2.5 px-2 text-right text-rose-500 bg-rose-50/10 dark:bg-rose-900/5 font-bold">{row.rejectionQty || 0}</td>
+                                          <td className="py-2.5 px-2 text-right text-amber-500 bg-amber-50/10 dark:bg-amber-900/5 font-bold">{row.startupQty || 0}</td>
+                                          <td className="py-2.5 px-2 text-right text-emerald-600 bg-emerald-50/10 dark:bg-emerald-900/5 font-black">{m.acceptedQty}</td>
 
                                           <td className="py-2.5 px-2 text-right font-medium text-slate-500 bg-slate-50 dark:bg-slate-800/30">{m.planKg}</td>
                                           <td className="py-2.5 px-2 text-right font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/5">{m.achievedKg}</td>
 
-                                          <td className="py-2.5 px-2 text-right text-rose-500 bg-rose-50/10 dark:bg-rose-900/5">{m.lostQty}</td>
                                           <td className="py-2.5 px-2 text-right font-bold text-rose-500 bg-rose-50/10 dark:bg-rose-900/5">{m.lostKg}</td>
 
                                           <td className="py-2.5 px-2 text-right text-amber-600 dark:text-amber-500">{m.bdLostKg}</td>
@@ -248,12 +263,19 @@ const DatabaseView: React.FC<Props> = ({ startDate, endDate, machineType, allDat
                               <tfoot className="bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-600 font-bold text-slate-800 dark:text-white text-xs">
                                  <tr>
                                     <td colSpan={7} className="py-3 px-4 text-right uppercase text-slate-500 tracking-widest text-[10px]">Total ({group.date})</td>
+                                    
                                     <td className="py-3 px-2 text-right">{group.subTotal.planQty.toLocaleString()}</td>
-                                    <td className="py-3 px-2 text-right text-emerald-600 dark:text-emerald-400">{group.subTotal.achvQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right">{group.subTotal.achvQty.toLocaleString()}</td>
+                                    
+                                    {/* NEW TOTALS */}
+                                    <td className="py-3 px-2 text-right text-rose-600 dark:text-rose-400">{group.subTotal.rejQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right text-amber-600 dark:text-amber-400">{group.subTotal.startQty.toLocaleString()}</td>
+                                    <td className="py-3 px-2 text-right text-emerald-600 dark:text-emerald-400">{group.subTotal.accQty.toLocaleString()}</td>
+
                                     <td className="py-3 px-2 text-right">{group.subTotal.planKg.toFixed(1)}</td>
                                     <td className="py-3 px-2 text-right text-emerald-600 dark:text-emerald-400">{group.subTotal.achvKg.toFixed(1)}</td>
-                                    <td className="py-3 px-2 text-right text-rose-600 dark:text-rose-400">{group.subTotal.lostQty.toLocaleString()}</td>
                                     <td className="py-3 px-2 text-right text-rose-600 dark:text-rose-400">{group.subTotal.lostKg.toFixed(1)}</td>
+                                    
                                     <td className="py-3 px-2 text-right text-amber-600 dark:text-amber-500">{group.subTotal.bdLostKg.toFixed(1)}</td>
                                     <td className="py-3 px-2 text-right text-amber-600 dark:text-amber-500">{group.subTotal.effLostKg.toFixed(1)}</td>
                                     <td></td>

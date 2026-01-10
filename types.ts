@@ -7,16 +7,15 @@ export interface ProductionItem {
   itemName: string;
   customerName: string;
   unitWeight: number;
-  jobNo: string; // New Field
-  type: MachineType; // To separate IM/BM
+  jobNo: string;
+  type: MachineType;
 }
 
 export interface AdminConfig {
-  productionItems: ProductionItem[]; // Replaces machineMappings
-  breakdownCategories: string[]; // List of categories
+  productionItems: ProductionItem[];
+  breakdownCategories: string[];
 }
 
-// ... (Breakdown interface remains same)
 export interface Breakdown {
   id: string;
   category: string;
@@ -38,7 +37,13 @@ export interface ProductionRow {
   qtyPerHour: number;
   cavities: number;
   cycleTime?: number;
-  achievedQty: number;
+  
+  // Production Counts
+  achievedQty: number; // Gross Total
+  rejectionQty?: number; // NEW
+  startupQty?: number;   // NEW
+  acceptedQty?: number;  // NEW (Good Products)
+
   breakdowns: Breakdown[];
 }
 

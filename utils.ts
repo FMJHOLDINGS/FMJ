@@ -11,9 +11,12 @@ export const parseMinutes = (timeStr: string): number | null => {
 export const calculateTimeDiff = (start: string, end: string): number => {
   const s = parseMinutes(start);
   const e0 = parseMinutes(end);
+
   if (s === null || e0 === null) return 0;
+
   let e = e0;
   if (e < s) e += 1440; // Crosses midnight
+
   return Math.max(0, e - s);
 };
 
@@ -33,19 +36,30 @@ export const calculateMetrics = (row: ProductionRow) => {
 
   // Calculate Breakdown Loss
   if (row.breakdowns) {
-    row.breakdowns.forEach(bd => {
+    row.breakdowns.forEach((bd) => {
       const min = calculateTimeDiff(bd.startTime, bd.endTime);
       bdMins += min;
+
       const thisBdLoss = Math.floor(ratePerMin * min);
       bdLostQty += thisBdLoss;
     });
   }
 
-  const achievedQty = row.achievedQty || 0;
-  const planQty = Math.floor(qtyPerHour * cavities * timeHr);
+  // --- CALCULATIONS ---
+  const achievedQty = row.achievedQty || 0; // Gross Production
+  const rejectionQty = row.rejectionQty || 0;
+  const startupQty = row.startupQty || 0;
+
+  // Accepted Qty (Good Production) = Gross - Rejects - Startup
+  const calculatedAccepted = Math.max(0, achievedQty - rejectionQty - startupQty);
+  const acceptedQty = calculatedAccepted;
+
+  // Use exact minutes for Plan Qty to avoid rounding errors
+  const planQty = Math.floor(qtyPerHour * cavities * (durationMins / 60));
 
   const planKg = Number(((planQty * unitWeight) / 1000).toFixed(2));
   const achievedKg = Number(((achievedQty * unitWeight) / 1000).toFixed(2));
+  const acceptedKg = Number(((acceptedQty * unitWeight) / 1000).toFixed(2)); // Good Kg
 
   const lostQty = Math.max(0, planQty - achievedQty);
   const lostKg = Number(((lostQty * unitWeight) / 1000).toFixed(2));
@@ -61,7 +75,12 @@ export const calculateMetrics = (row: ProductionRow) => {
     timeHr,
     planQty,
     planKg,
+    achievedQty,
     achievedKg,
+    rejectionQty,
+    startupQty,
+    acceptedQty,
+    acceptedKg,
     lostQty,
     lostKg,
     bdMins,
@@ -69,38 +88,44 @@ export const calculateMetrics = (row: ProductionRow) => {
     bdLostKg,
     efficiencyLossQty,
     efficiencyLossKg,
-    efficiency
+    efficiency,
   };
 };
 
 export const getDatesInRange = (startDate: string, endDate: string): string[] => {
-  const dates = [];
+  const dates: string[] = [];
   const currDate = new Date(startDate);
   const lastDate = new Date(endDate);
+
   while (currDate <= lastDate) {
     dates.push(currDate.toISOString().split('T')[0]);
     currDate.setDate(currDate.getDate() + 1);
   }
+
   return dates;
 };
 
-// --- NEW HELPERS FOR REPORTS (MTD & BREAKDOWNS) ---
-
-export const getMTDData = (allData: Record<string, any>, currentDate: string, machineType: string) => {
-  const currentMonthPrefix = currentDate.substring(0, 7); // e.g. "2025-12"
+export const getMTDData = (
+  allData: Record<string, any>,
+  currentDate: string,
+  machineType: string
+) => {
+  const currentMonthPrefix = currentDate.substring(0, 7);
 
   let mtdPlan = 0;
   let mtdAchv = 0;
   let mtdLoss = 0;
 
   Object.values(allData).forEach((dayData: any) => {
-    // Ensure we only sum up data for the requested machine type AND current month
-    if (dayData.date && dayData.date.startsWith(currentMonthPrefix) &&
+    if (
+      dayData?.date &&
+      typeof dayData.date === 'string' &&
+      dayData.date.startsWith(currentMonthPrefix) &&
       dayData.date <= currentDate &&
-      dayData.machineType === machineType) {
-
-      if (dayData.rows) {
-        dayData.rows.forEach((row: any) => {
+      dayData.machineType === machineType
+    ) {
+      if (Array.isArray(dayData.rows)) {
+        dayData.rows.forEach((row: ProductionRow) => {
           const m = calculateMetrics(row);
           mtdPlan += m.planKg;
           mtdAchv += m.achievedKg;
@@ -116,12 +141,11 @@ export const getMTDData = (allData: Record<string, any>, currentDate: string, ma
 export const getBreakdownSummary = (rows: any[]) => {
   const grouped: Record<string, any[]> = {};
 
-  rows.forEach(row => {
-    if (row.breakdowns) {
+  rows.forEach((row) => {
+    if (row?.breakdowns) {
       row.breakdowns.forEach((bd: any) => {
         if (!grouped[bd.category]) grouped[bd.category] = [];
 
-        // Re-calculate breakdown specific loss
         const ratePerMin = ((row.qtyPerHour || 0) * (row.cavities || 1)) / 60;
         const mins = calculateTimeDiff(bd.startTime, bd.endTime);
         const lossQty = Math.floor(ratePerMin * mins);
@@ -133,7 +157,7 @@ export const getBreakdownSummary = (rows: any[]) => {
           machine: row.machine,
           product: row.product,
           mins,
-          lossKg
+          lossKg,
         });
       });
     }
@@ -142,41 +166,13 @@ export const getBreakdownSummary = (rows: any[]) => {
   return grouped;
 };
 
-export const exportToCSV = (dayData: DayData) => {
-  const headers = [
-    'Shift', 'Start', 'End', 'Machine', 'Product', 'Unit Wt', 'Qty/Hr', 'Cavities',
-    'Time Hr', 'Plan Qty', 'Achieved Qty', 'Plan Kg', 'Achieved Kg', 'Lost Qty', 'BD Minutes', 'Efficiency %'
-  ];
-
-  const rows = dayData.rows.map(row => {
-    const m = calculateMetrics(row);
-    return [
-      row.shift, row.startTime, row.endTime, row.machine, row.product, row.unitWeight,
-      row.qtyPerHour, row.cavities, m.timeHr, m.planQty, row.achievedQty, m.planKg,
-      m.achievedKg, m.lostQty, m.bdMins, m.efficiency.toFixed(1)
-    ];
-  });
-
-  const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `Production_Report_${dayData.date}_${dayData.machineType}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
 export const exportToExcel = async (
   rows: ProductionRow[],
-  filters: { machine: string[], product: string[], startDate: string, endDate: string, type: string }
+  filters: { machine: string[]; product: string[]; startDate: string; endDate: string; type: string }
 ) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Production Report');
 
-  // Set Column Widths
   worksheet.columns = [
     { header: 'Date', key: 'date', width: 12 },
     { header: 'Shift', key: 'shift', width: 8 },
@@ -185,49 +181,70 @@ export const exportToExcel = async (
     { header: 'Wt (g)', key: 'wt', width: 10 },
     { header: 'Plan Qty', key: 'planQty', width: 12 },
     { header: 'Achv Qty', key: 'achvQty', width: 12 },
+    { header: 'Rej Qty', key: 'rejQty', width: 12 },
+    { header: 'Start Qty', key: 'startQty', width: 12 },
+    { header: 'Acc Qty', key: 'accQty', width: 12 },
     { header: 'Plan Kg', key: 'planKg', width: 12 },
     { header: 'Achv Kg', key: 'achvKg', width: 12 },
     { header: 'Lost Qty', key: 'lostQty', width: 12 },
     { header: 'Lost Kg', key: 'lostKg', width: 12 },
   ];
 
-  // Styling Constants
-  const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Slate 800
-  const headerFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true, size: 11 };
-  const border: Partial<ExcelJS.Borders> = {
-    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+  const headerFill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1E293B' },
   };
 
-  // Add Header Row
+  const headerFont: Partial<ExcelJS.Font> = {
+    color: { argb: 'FFFFFFFF' },
+    bold: true,
+    size: 11,
+  };
+
   const headerRow = worksheet.getRow(1);
   headerRow.values = [
-    'Date', 'Shift', 'Machine', 'Product', 'Wt(g)',
-    'Plan Qty', 'Achv Qty', 'Plan Kg', 'Achv Kg', 'Lost Qty', 'Lost Kg'
+    'Date',
+    'Shift',
+    'Machine',
+    'Product',
+    'Wt(g)',
+    'Plan Qty',
+    'Gross Qty',
+    'Rej Qty',
+    'Start Qty',
+    'Good Qty',
+    'Plan Kg',
+    'Gross Kg',
+    'Lost Qty',
+    'Lost Kg',
   ];
 
   headerRow.eachCell((cell) => {
     cell.fill = headerFill;
     cell.font = headerFont;
     cell.alignment = { vertical: 'middle', horizontal: 'center' };
-    cell.border = border;
   });
-  headerRow.height = 25;
 
-  let totalPlanKg = 0;
-  let totalAchvKg = 0;
-  let totalLostKg = 0;
+  // --- INITIALIZE TOTALS ---
+  let tPlanQty = 0, tAchvQty = 0, tRejQty = 0, tStartQty = 0, tAccQty = 0;
+  let tPlanKg = 0, tAchvKg = 0, tLostQty = 0, tLostKg = 0;
 
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     const m = calculateMetrics(row);
 
-    totalPlanKg += m.planKg;
-    totalAchvKg += m.achievedKg;
-    totalLostKg += m.lostKg;
+    // Sum Totals
+    tPlanQty += m.planQty;
+    tAchvQty += row.achievedQty;
+    tRejQty += row.rejectionQty || 0;
+    tStartQty += row.startupQty || 0;
+    tAccQty += m.acceptedQty;
+    tPlanKg += m.planKg;
+    tAchvKg += m.achievedKg;
+    tLostQty += m.lostQty;
+    tLostKg += m.lostKg;
 
-    const r = worksheet.addRow([
+    worksheet.addRow([
       (row as any).date || '',
       row.shift.toUpperCase(),
       row.machine,
@@ -235,41 +252,90 @@ export const exportToExcel = async (
       row.unitWeight,
       m.planQty,
       row.achievedQty,
+      row.rejectionQty || 0,
+      row.startupQty || 0,
+      m.acceptedQty,
       m.planKg,
       m.achievedKg,
       m.lostQty,
-      m.lostKg
+      m.lostKg,
     ]);
-
-    // Row Styling
-    r.height = 20;
-    r.eachCell((cell, colNumber) => {
-      cell.border = border;
-      cell.alignment = { vertical: 'middle', horizontal: colNumber <= 4 ? 'left' : 'right' };
-      if (colNumber > 4) cell.numFmt = '#,##0.0'; // Number format
-      if (colNumber === 2) { // Shift
-        cell.font = { color: { argb: row.shift === 'day' ? 'FFD97706' : 'FF4F46E5' }, bold: true };
-      }
-    });
   });
 
-  // Add Total Row
+  // --- ADD GRAND TOTAL ROW ---
   const totalRow = worksheet.addRow([
     'TOTAL', '', '', '', '',
-    '', '', totalPlanKg, totalAchvKg, '', totalLostKg
+    tPlanQty, tAchvQty, tRejQty, tStartQty, tAccQty,
+    tPlanKg.toFixed(2), tAchvKg.toFixed(2), tLostQty, tLostKg.toFixed(2)
   ]);
-  totalRow.height = 30;
-  totalRow.eachCell((cell, colNumber) => {
-    cell.font = { bold: true, size: 12 };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-    cell.border = { top: { style: 'medium' }, bottom: { style: 'medium' } };
-    cell.alignment = { vertical: 'middle', horizontal: colNumber <= 4 ? 'left' : 'right' };
-    if (colNumber > 4) cell.numFmt = '#,##0.0';
-  });
 
+  totalRow.eachCell((cell) => {
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow Highlight
+    cell.alignment = { horizontal: 'right' };
+    cell.border = { top: { style: 'double' }, bottom: { style: 'thick' } };
+  });
+  
+  // Merge first few cells for 'TOTAL' label
   worksheet.mergeCells(`A${totalRow.number}:E${totalRow.number}`);
+  worksheet.getCell(`A${totalRow.number}`).alignment = { horizontal: 'center', vertical: 'middle' };
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  saveAs(blob, `Production_Report_${filters.type}_${filters.startDate}_to_${filters.endDate}.xlsx`);
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  saveAs(blob, `Production_Report_${filters.type}.xlsx`);
+};
+
+/** ---------- OEE HELPERS (New) ---------- **/
+
+export const calculateOEEFromRows = (rows: ProductionRow[]) => {
+  let plannedMins = 0;
+  let downtimeMins = 0;
+
+  let planQty = 0;
+  let grossQty = 0;
+  let goodQty = 0;
+
+  rows.forEach((row) => {
+    plannedMins += calculateTimeDiff(row.startTime, row.endTime);
+
+    const m = calculateMetrics(row);
+    downtimeMins += m.bdMins;
+
+    planQty += m.planQty;
+    grossQty += row.achievedQty || 0;
+    goodQty += m.acceptedQty || 0;
+  });
+
+  const operatingMins = Math.max(0, plannedMins - downtimeMins);
+
+  const availability = plannedMins > 0 ? operatingMins / plannedMins : 0;
+  const performance = planQty > 0 ? grossQty / planQty : 0;
+  const quality = grossQty > 0 ? goodQty / grossQty : 0;
+
+  const oee = availability * performance * quality;
+
+  return {
+    availability,
+    performance,
+    quality,
+    oee,
+    plannedMins,
+    downtimeMins,
+    operatingMins,
+    planQty,
+    grossQty,
+    goodQty,
+  };
+};
+
+export const isDayData = (v: any): v is DayData => {
+  return (
+    v &&
+    typeof v === 'object' &&
+    typeof v.date === 'string' &&
+    Array.isArray(v.rows)
+  );
 };
