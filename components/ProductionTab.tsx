@@ -24,82 +24,95 @@ type Supervisor = (typeof SUPERVISORS)[number];
 const otherSupervisor = (s: Supervisor): Supervisor => (s === 'Shift-A' ? 'Shift-B' : 'Shift-A');
 const isTuesday = (dateStr: string) => new Date(dateStr).getDay() === 2;
 const minusDays = (dateStr: string, days: number) => { const d = new Date(dateStr); d.setDate(d.getDate() - days); return d.toISOString().split('T')[0]; };
-const normalizeSupervisor = (v: any, fallback: Supervisor): Supervisor => { if (v === 'Shift-A' || v === 'Shift-B') return v; return fallback; };
 
 const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, adminConfig }) => {
   const [subTab, setSubTab] = useState<SubTab>('ENTRY');
-  const [entryDate, setEntryDate] = useState(initialDate);
-  const [activeShift, setActiveShift] = useState<ShiftType>('day');
-  const [reportStartDate, setReportStartDate] = useState(initialDate);
-  const [reportEndDate, setReportEndDate] = useState(initialDate);
+  
+  // --- PERSISTENT STATE ---
+  const [entryDate, setEntryDate] = useState(() => localStorage.getItem('fmj_entry_date') || initialDate);
+  const [activeShift, setActiveShift] = useState<ShiftType>(() => (localStorage.getItem('fmj_active_shift') as ShiftType) || 'day');
+  const [reportStartDate, setReportStartDate] = useState(() => localStorage.getItem('fmj_rep_start') || initialDate);
+  const [reportEndDate, setReportEndDate] = useState(() => localStorage.getItem('fmj_rep_end') || initialDate);
+
+  useEffect(() => { localStorage.setItem('fmj_entry_date', entryDate); }, [entryDate]);
+  useEffect(() => { localStorage.setItem('fmj_active_shift', activeShift); }, [activeShift]);
+  useEffect(() => { localStorage.setItem('fmj_rep_start', reportStartDate); }, [reportStartDate]);
+  useEffect(() => { localStorage.setItem('fmj_rep_end', reportEndDate); }, [reportEndDate]);
+
   const [selectedMachines, setSelectedMachines] = useState<string[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [activeBreakdownRowId, setActiveBreakdownRowId] = useState<string | null>(null);
   const [activeBreakdownMachine, setActiveBreakdownMachine] = useState<'IM'|'BM'|null>(null);
   const [showSwapNotice, setShowSwapNotice] = useState(false);
 
-  const getKey = (type: 'IM' | 'BM') => `${entryDate}_${type}`;
-  const getDayData = (type: 'IM' | 'BM'): DayData => {
-     const key = getKey(type);
-     return (allData[key] as DayData) || { id: key, date: entryDate, machineType: type, daySupervisor: '', nightSupervisor: '', rows: [] };
+  // --- SUPERVISOR STORAGE ---
+  const supKey = `${entryDate}_SUPERVISORS`;
+  const savedSupData = allData[supKey] || { day: 'Shift-A', night: 'Shift-B' };
+  const currentDaySup = savedSupData.day;
+  const currentNightSup = savedSupData.night;
+  const displaySup = activeShift === 'day' ? currentDaySup : currentNightSup;
+
+  const updateSupervisors = (d: Supervisor, n: Supervisor) => {
+      onUpdate(supKey, { id: supKey, date: entryDate, day: d, night: n });
   };
 
-  const imData = getDayData('IM');
-  const bmData = getDayData('BM');
-
-  // --- FILTERED CONFIGS ---
-  const imConfig = useMemo(() => ({ ...adminConfig, productionItems: adminConfig.productionItems.filter(i => i.type === 'IM') }), [adminConfig]);
-  const bmConfig = useMemo(() => ({ ...adminConfig, productionItems: adminConfig.productionItems.filter(i => i.type === 'BM') }), [adminConfig]);
-
-  // --- SUPERVISOR LOGIC (SYNCED) ---
-  const currentDaySup = normalizeSupervisor(imData.daySupervisor, 'Shift-A');
-  const currentNightSup = normalizeSupervisor(imData.nightSupervisor, otherSupervisor(currentDaySup));
-  const selectedSupervisorInUI = activeShift === 'day' ? currentDaySup : currentNightSup;
-
-  // 1. Update Master (IM) Only
-  const updateMasterSupervisors = (d: Supervisor, n: Supervisor) => {
-      onUpdate(getKey('IM'), { ...imData, daySupervisor: d, nightSupervisor: n });
-  };
-
-  // 2. Auto-Sync BM to match IM (Prevents Race Condition)
   useEffect(() => {
-      if (bmData.daySupervisor !== currentDaySup || bmData.nightSupervisor !== currentNightSup) {
-          // Sync BM to match IM
-          const timer = setTimeout(() => {
-              onUpdate(getKey('BM'), { ...bmData, daySupervisor: currentDaySup, nightSupervisor: currentNightSup });
-          }, 100); // Small delay to allow IM update to settle
-          return () => clearTimeout(timer);
+    const sup = allData[supKey];
+    if (!sup) return;
+
+    const d = sup.day;
+    const n = sup.night;
+
+    const imKey = `${entryDate}_IM`;
+    const bmKey = `${entryDate}_BM`;
+
+    const im = allData[imKey];
+    if (im && (im.daySupervisor !== d || im.nightSupervisor !== n)) {
+      onUpdate(imKey, { ...im, daySupervisor: d, nightSupervisor: n });
+    }
+
+    const bm = allData[bmKey];
+    if (bm && (bm.daySupervisor !== d || bm.nightSupervisor !== n)) {
+      onUpdate(bmKey, { ...bm, daySupervisor: d, nightSupervisor: n });
+    }
+  }, [allData, entryDate, supKey, onUpdate]);
+
+  useEffect(() => {
+      if (!allData[supKey]) {
+          updateSupervisors('Shift-A', 'Shift-B');
       }
-  }, [currentDaySup, currentNightSup, bmData, entryDate]);
-
-  // 3. Initialize if Empty
-  useEffect(() => {
-     if (!imData.daySupervisor || !imData.nightSupervisor) {
-         updateMasterSupervisors('Shift-A', 'Shift-B');
-     }
   }, [entryDate]);
 
-  // 4. Tuesday Check
   useEffect(() => {
     if (!isTuesday(entryDate)) { setShowSwapNotice(false); return; }
-    const prevKey = `${minusDays(entryDate, 7)}_IM`;
-    const prev = allData[prevKey] as DayData | undefined;
-    if (!prev?.daySupervisor) { setShowSwapNotice(false); return; }
-    const prevDay = normalizeSupervisor(prev.daySupervisor, 'Shift-A');
-    setShowSwapNotice(currentDaySup === prevDay);
+    const prevKey = `${minusDays(entryDate, 7)}_SUPERVISORS`;
+    const prevSup = allData[prevKey];
+    if (!prevSup) { setShowSwapNotice(false); return; }
+    setShowSwapNotice(currentDaySup === prevSup.day);
   }, [entryDate, allData, currentDaySup]);
 
   const handleSupervisorChange = (newVal: string) => {
     if (newVal !== 'Shift-A' && newVal !== 'Shift-B') return;
     const selected = newVal as Supervisor;
-    // Update Master based on current Shift tab
-    if (activeShift === 'day') updateMasterSupervisors(selected, otherSupervisor(selected));
-    else updateMasterSupervisors(otherSupervisor(selected), selected);
+    if (activeShift === 'day') updateSupervisors(selected, otherSupervisor(selected));
+    else updateSupervisors(otherSupervisor(selected), selected);
   };
 
-  const handleSwapNow = () => updateMasterSupervisors(currentNightSup, currentDaySup);
+  const handleSwapNow = () => updateSupervisors(currentNightSup, currentDaySup);
 
-  // --- ROW OPERATIONS ---
+  // --- DATA LOADING ---
+  const getKey = (type: 'IM' | 'BM') => `${entryDate}_${type}`;
+  const getDayData = (type: 'IM' | 'BM'): DayData => {
+     const key = getKey(type);
+     return (allData[key] as DayData) || { id: key, date: entryDate, machineType: type, daySupervisor: currentDaySup, nightSupervisor: currentNightSup, rows: [] };
+  };
+
+  const imData = getDayData('IM');
+  const bmData = getDayData('BM');
+
+  const imConfig = useMemo(() => ({ ...adminConfig, productionItems: adminConfig.productionItems.filter(i => i.type === 'IM') }), [adminConfig]);
+  const bmConfig = useMemo(() => ({ ...adminConfig, productionItems: adminConfig.productionItems.filter(i => i.type === 'BM') }), [adminConfig]);
+
   const handleAddEntry = (type: 'IM' | 'BM') => {
       const data = type === 'IM' ? imData : bmData;
       const newRow: ProductionRow = {
@@ -110,7 +123,7 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
           machine: '', product: '', unitWeight: 0, qtyPerHour: 0, cavities: 1, cycleTime: 0,
           achievedQty: 0, rejectionQty: 0, startupQty: 0, acceptedQty: 0, breakdowns: []
       };
-      onUpdate(getKey(type), { ...data, rows: [newRow, ...(data.rows || [])] });
+      onUpdate(getKey(type), { ...data, daySupervisor: currentDaySup, nightSupervisor: currentNightSup, rows: [newRow, ...(data.rows || [])] });
   };
 
   const updateRow = (type: 'IM' | 'BM', rowId: string, updates: Partial<ProductionRow>) => {
@@ -156,6 +169,8 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
       await exportToExcel(rows, { machine: selectedMachines, product: selectedProducts, startDate: reportStartDate, endDate: reportEndDate, type });
   };
 
+  const clearFilters = () => { setSelectedMachines([]); setSelectedProducts([]); };
+
   const calculateShiftStats = (rows: ProductionRow[]) => rows.reduce((acc, row) => {
      const m = calculateMetrics(row);
      return { plan: acc.plan + m.planKg, achv: acc.achv + m.achievedKg, lost: acc.lost + m.lostKg };
@@ -164,7 +179,6 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
   const bmStats = calculateShiftStats(bmRows);
   const totalStats = { plan: imStats.plan + bmStats.plan, achv: imStats.achv + bmStats.achv, lost: imStats.lost + bmStats.lost };
 
-  // --- STYLES FOR ANIMATED TABS ---
   const styles = `
     @keyframes spin-border { 0% { --rotate: 0deg; } 100% { --rotate: 360deg; } }
     @property --rotate { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
@@ -185,24 +199,27 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
           <SubNavItem active={subTab === 'IM_DB'} icon={Database} label="IM Report" onClick={() => setSubTab('IM_DB')} color="emerald" />
           <SubNavItem active={subTab === 'BM_DB'} icon={Database} label="BM Report" onClick={() => setSubTab('BM_DB')} color="emerald" />
           <div className="w-px h-5 bg-slate-300 dark:bg-slate-600 mx-1" />
-          <SubNavItem active={subTab === 'BREAKDOWNS'} icon={Activity} label="Logs" onClick={() => setSubTab('BREAKDOWNS')} color="rose" />
+          {/* Label Changed from "Logs" to "Breakdowns" here */}
+          <SubNavItem active={subTab === 'BREAKDOWNS'} icon={Activity} label="Breakdowns" onClick={() => setSubTab('BREAKDOWNS')} color="rose" />
           <SubNavItem active={subTab === 'SUMMARY'} icon={BarChart3} label="Summary" onClick={() => setSubTab('SUMMARY')} color="amber" />
         </div>
       </div>
 
-      {/* CONTENT (FULL WIDTH) */}
+      {/* CONTENT */}
       <div className="flex-1 overflow-auto p-4 custom-scrollbar bg-[#F8FAFC] dark:bg-[#020617] transition-colors duration-300 pb-24 w-full">
+        
+        {/* --- ENTRY (FULL WIDTH) --- */}
         {subTab === 'ENTRY' && (
             <div className="animate-fade-in space-y-6 w-full">
-                {/* CONTROLS */}
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm w-full">
+                    {/* ... (Keep existing Header Content) ... */}
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-900 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
                             <Calendar className="w-5 h-5 text-indigo-500" /><input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} className="bg-transparent font-black text-slate-700 dark:text-white outline-none uppercase text-sm dark:[color-scheme:dark]" />
                         </div>
                         <div className="relative z-20 group">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserCheck className={`w-4 h-4 ${activeShift === 'day' ? 'text-amber-500' : 'text-indigo-500'}`} /></div>
-                            <select value={selectedSupervisorInUI} onChange={(e) => handleSupervisorChange(e.target.value)} className="block w-40 pl-10 pr-4 py-2 text-xs font-bold uppercase rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-0 appearance-none cursor-pointer transition-all">
+                            <select value={displaySup} onChange={(e) => handleSupervisorChange(e.target.value)} className="block w-40 pl-10 pr-4 py-2 text-xs font-bold uppercase rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-0 appearance-none cursor-pointer transition-all">
                                 <option value="Shift-A">Shift-A</option><option value="Shift-B">Shift-B</option>
                             </select>
                             <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><ChevronDown className="w-4 h-4 text-slate-400" /></div>
@@ -211,7 +228,6 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
                     {showSwapNotice && <button onClick={handleSwapNow} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg animate-pulse"><RefreshCcw className="w-3.5 h-3.5" /> Tuesday Swap</button>}
                 </div>
                 
-                {/* DAY/NIGHT SWITCHER */}
                 <div className="flex justify-center">
                     <div className="flex bg-slate-200 dark:bg-slate-800 p-1.5 rounded-full border border-slate-300 dark:border-slate-700 shadow-inner">
                         <button onClick={() => setActiveShift('day')} className={`px-10 py-2.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all duration-300 ${activeShift === 'day' ? 'bg-amber-500 text-white shadow-lg scale-105' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}><Sun className="w-4 h-4" /> Day Shift</button>
@@ -231,8 +247,9 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
             </div>
         )}
 
+        {/* --- DATABASE TAB (FULL WIDTH) --- */}
         {(subTab === 'IM_DB' || subTab === 'BM_DB') && (
-            <div className="animate-fade-in space-y-6 w-full">
+            <div className="animate-fade-in space-y-6 w-full px-2">
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                    <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase flex items-center gap-3"><History className="text-indigo-500" /> {subTab === 'IM_DB' ? 'IM' : 'BM'} Database</h2>
                    <div className="flex flex-wrap items-center gap-2">
@@ -251,8 +268,22 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
             </div>
         )}
 
-        {subTab === 'BREAKDOWNS' && <BreakdownLog allData={allData} date={entryDate} />}
-        {subTab === 'SUMMARY' && <DailySummary allData={allData} date={entryDate} breakdownCategories={adminConfig.breakdownCategories} onUpdate={onUpdate} />}
+        {/* --- BREAKDOWN LOG (FULL WIDTH) --- */}
+        {subTab === 'BREAKDOWNS' && (
+            <div className="w-full px-2">
+                <BreakdownLog allData={allData} date={entryDate} />
+            </div>
+        )}
+
+        {/* --- SUMMARY TAB (SPECIAL LOGIC) --- */}
+        {subTab === 'SUMMARY' && (
+            // මෙන්න මෙතන තමයි වැඩේ තියෙන්නේ. අපි 'MonthlyDetailedView' එකට විතරක් CSS class එකක් පාස් කරනවා හරි, නැත්නම් `DailySummary` එක ඇතුලේ මේක හදන්නත් පුළුවන්.
+            // ඒත් සරලම විදිහ තමයි, අපි `DailySummary` එකට මුළු ඉඩම දෙනවා. ඊට පස්සේ `DailySummary` ඇතුලේ කොටස් වලට CSS දානවා.
+            <div className="w-full">
+                <DailySummary allData={allData} date={entryDate} breakdownCategories={adminConfig.breakdownCategories} onUpdate={onUpdate} />
+            </div>
+        )}
+
         {activeBDRow && <BreakdownModal row={activeBDRow} onClose={() => { setActiveBreakdownRowId(null); setActiveBreakdownMachine(null); }} onSave={(bds) => { if (activeBreakdownMachine && activeBreakdownRowId) { updateRow(activeBreakdownMachine, activeBreakdownRowId, { breakdowns: bds }); setActiveBreakdownRowId(null); setActiveBreakdownMachine(null); }}} categories={adminConfig.breakdownCategories} />}
       </div>
 
@@ -271,7 +302,6 @@ const ProductionTab: React.FC<Props> = ({ date: initialDate, allData, onUpdate, 
   );
 };
 
-// --- STYLED SUBNAV ---
 const SubNavItem: React.FC<{ active: boolean; icon: any; label: string; onClick: () => void; color: string; }> = ({ active, icon: Icon, label, onClick, color }) => {
   const colorMap: Record<string, string> = { indigo: '#6366f1', emerald: '#10b981', rose: '#f43f5e', amber: '#f59e0b' };
   const cssVar = { '--tab-color': colorMap[color], '--bg-color': 'var(--tab-bg-color, #1e293b)' } as React.CSSProperties;
