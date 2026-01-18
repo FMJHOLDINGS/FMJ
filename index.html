@@ -1,0 +1,137 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProdSystem Pro | FMJ Manufacturing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+
+    /* ... (ඔබේ දැනට තියෙන CSS එලෙසම තියන්න) ... */
+
+    /* === Electrical Border Animation === */
+    @keyframes slide-right {
+      0% { transform: translateX(-100%); opacity: 0; }
+      50% { opacity: 1; }
+      100% { transform: translateX(100%); opacity: 0; }
+    }
+    
+    @keyframes slide-left {
+      0% { transform: translateX(100%); opacity: 0; }
+      50% { opacity: 1; }
+      100% { transform: translateX(-100%); opacity: 0; }
+    }
+
+    .animate-slide-right {
+      animation: slide-right 2s linear infinite;
+    }
+    
+    .animate-slide-left {
+      animation: slide-left 2s linear infinite;
+    }
+
+    /* Pulse for Digital Clock Icon */
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.8; transform: scale(0.95); }
+    }
+    .animate-pulse-slow {
+      animation: pulse-slow 3s ease-in-out infinite;
+    }
+
+
+
+
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    /* === Enhanced Custom Scrollbar === */
+    
+    /* Width & General Style */
+    .custom-scrollbar::-webkit-scrollbar { 
+      width: 10px;        /* Increased width for visibility */
+      height: 10px;       /* Increased height for horizontal scroll */
+    }
+    
+    /* Track (Background) */
+    .custom-scrollbar::-webkit-scrollbar-track { 
+      background: rgba(0, 0, 0, 0.05); 
+      border-radius: 8px;
+    }
+    .dark .custom-scrollbar::-webkit-scrollbar-track { 
+      background: rgba(255, 255, 255, 0.05); 
+    }
+
+    /* Thumb (The Moving Part) */
+    .custom-scrollbar::-webkit-scrollbar-thumb { 
+      background: #94a3b8; /* Slate-400 - Much more visible than before */
+      border-radius: 8px; 
+      border: 2px solid transparent; 
+      background-clip: content-box; /* Makes it look nicer with padding */
+    }
+    
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { 
+      background: #475569; /* Slate-600 for Dark Mode */
+    }
+
+    /* Hover Effect */
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { 
+      background: #64748b; /* Slate-500 on hover */
+    }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { 
+      background: #64748b; /* Lighter on hover in dark mode */
+    }
+    
+    /* Corner */
+    .custom-scrollbar::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* Glass Effect Utilities (Keep existing) */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .dark .glass-card {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+  </style>
+
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-B3cQj4mv.js"></script>
+</head>
+<body class="bg-[#F8FAFC] text-[#0F172A] dark:bg-[#020617] dark:text-slate-200 overflow-hidden transition-colors duration-300">
+  <div id="root"></div>
+</body>
+</html>
