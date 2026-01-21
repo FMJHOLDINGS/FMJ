@@ -64,12 +64,13 @@ export const downloadDailyReportExcel = async (
 ) => {
     try {
       // Correct Path for Template
-      const response = await fetch('./public/template/report_template.xlsx');
+      // ඔබේ Repo එකේ නම 'FMJ' නම්:
+const response = await fetch('/FMJ/template/report_template.xlsx');
       
       if (!response.ok) throw new Error("Template Not Found!");
       const buffer = await response.arrayBuffer();
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer);
+      await wb.xlsx.load(buffer);npm
       const ws = wb.worksheets[0];
 
       ws.getCell(EXCEL_CONFIG.dateCell).value = selDate;
