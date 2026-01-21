@@ -64,7 +64,7 @@ export const downloadDailyReportExcel = async (
 ) => {
     try {
       // Correct Path for Template
-      const response = await fetch('./template/report_template.xlsx');
+      const response = await fetch('./public/template/report_template.xlsx');
       
       if (!response.ok) throw new Error("Template Not Found!");
       const buffer = await response.arrayBuffer();
