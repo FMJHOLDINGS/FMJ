@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   FileSpreadsheet, Filter, CalendarDays, ShieldCheck, 
   Rocket, Scale, CheckCircle2, XCircle, ChevronDown, ChevronUp, BarChart3, Check, PenTool, X, Save, PlusCircle, Trash2, Atom
-} from 'lucide-react'; // Changed Factory to Rocket for Startup
+} from 'lucide-react';
 import { 
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
@@ -16,13 +16,29 @@ interface Props {
   adminConfig?: AdminConfig; 
 }
 
+// Interfaces to fix TS error
+interface StatBoxProps { label: string; value: string; icon: React.ReactNode; color: string; }
+interface DailyViewProps { data: any[]; onEditRow: (r: any) => void; }
+interface ExpandableCardProps { date: string; items: any[]; onEditRow: (r: any) => void; }
+interface ModalProps { row: any; onClose: () => void; onSave: (id: string, d: string, t: string, defs: DefectEntry[]) => void; categories: string[]; }
+
 const COLORS = {
   primary: '#6366f1',
   danger: '#f43f5e',
   grid: '#94a3b8'
 };
 
-// --- CUSTOM DROPDOWN ---
+// --- NEW DATE HELPERS (CURRENT MONTH LOGIC) ---
+const getMonthStart = () => {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth(), 1).toLocaleDateString('en-CA'); 
+};
+
+const getMonthEnd = () => {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).toLocaleDateString('en-CA');
+};
+
 const CustomDropdown = ({ options, selected, onChange }: any) => {
     const [isOpen, setIsOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -39,13 +55,9 @@ const CustomDropdown = ({ options, selected, onChange }: any) => {
             </button>
             {isOpen && (
                 <div className="absolute top-full right-0 mt-2 w-full min-w-[220px] max-h-64 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[100] p-1">
-                    <div onClick={() => { onChange('ALL'); setIsOpen(false); }} className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer text-xs font-bold transition-colors ${selected === 'ALL' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
-                        {selected === 'ALL' && <Check className="w-3 h-3" />}<span>All Products</span>
-                    </div>
+                    <div onClick={() => { onChange('ALL'); setIsOpen(false); }} className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer text-xs font-bold transition-colors ${selected === 'ALL' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{selected === 'ALL' && <Check className="w-3 h-3" />}<span>All Products</span></div>
                     {options.map((opt: string) => (
-                        <div key={opt} onClick={() => { onChange(opt); setIsOpen(false); }} className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer text-xs font-bold transition-colors ${selected === opt ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
-                            {selected === opt && <Check className="w-3 h-3" />}<span className="truncate">{opt}</span>
-                        </div>
+                        <div key={opt} onClick={() => { onChange(opt); setIsOpen(false); }} className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer text-xs font-bold transition-colors ${selected === opt ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{selected === opt && <Check className="w-3 h-3" />}<span className="truncate">{opt}</span></div>
                     ))}
                 </div>
             )}
@@ -55,18 +67,17 @@ const CustomDropdown = ({ options, selected, onChange }: any) => {
 
 const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) => { 
   const sourceData = data || allData || {};
-  const today = new Date().toISOString().split('T')[0];
   
-  // -- PERSISTENT STATE --
-  const [startDate, setStartDate] = useState(() => localStorage.getItem('quality_start_date') || today);
-  const [endDate, setEndDate] = useState(() => localStorage.getItem('quality_end_date') || today);
+  // --- UPDATED LOGIC: If localStorage is empty, use getMonthStart/End ---
+  const [startDate, setStartDate] = useState(() => localStorage.getItem('quality_start_date') || getMonthStart());
+  const [endDate, setEndDate] = useState(() => localStorage.getItem('quality_end_date') || getMonthEnd());
+  
   const [selectedItem, setSelectedItem] = useState('ALL');
   const [editingRow, setEditingRow] = useState<any | null>(null);
 
   useEffect(() => { localStorage.setItem('quality_start_date', startDate); }, [startDate]);
   useEffect(() => { localStorage.setItem('quality_end_date', endDate); }, [endDate]);
 
-  // --- DATA PROCESSING ---
   const processedData = useMemo(() => {
     const rows: any[] = [];
     if (!sourceData || Object.keys(sourceData).length === 0) return [];
@@ -145,15 +156,11 @@ const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) =
     })).sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredData]);
 
-  // --- EXPORT HANDLING ---
   const handleExport = async () => {
      if (filteredData.length === 0) { alert("No data available to export."); return; }
-     
      if (selectedItem !== 'ALL') {
-         // Single Item
          await generateItemReport(filteredData, selectedItem, startDate, endDate);
      } else {
-         // Full Report
          const extraCats = adminConfig?.breakdownCategories || [];
          await generateProductionReport(filteredData, startDate, endDate, extraCats);
      }
@@ -174,9 +181,10 @@ const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) =
       setEditingRow(null);
   };
 
+  // --- DROPDOWN CATEGORIES FIX ---
   const availableCategories = useMemo(() => {
-      const defaults = ["LOW THIKNESS", "FORMING ISSUE", "BLACK DOT", "BURN MARK", "OTHER"];
-      const fromConfig = adminConfig?.breakdownCategories || [];
+      const defaults = ["OTHER"];
+      const fromConfig = (adminConfig as any)?.qaCategories || [];
       return Array.from(new Set([...defaults, ...fromConfig])).sort();
   }, [adminConfig]);
 
@@ -203,8 +211,6 @@ const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) =
              <StatBoxCompact label="Production" value={`${stats.totalKg.toFixed(1)} kg`} icon={<Scale className="w-4 h-4 text-white"/>} color="from-indigo-500 to-blue-500" />
              <StatBoxCompact label="Accepted" value={`${stats.goodKg.toFixed(1)} kg`} icon={<CheckCircle2 className="w-4 h-4 text-white"/>} color="from-emerald-500 to-teal-500" />
              <StatBoxCompact label="Rejected" value={`${stats.rejKg.toFixed(1)} kg`} icon={<XCircle className="w-4 h-4 text-white"/>} color="from-rose-500 to-pink-500" />
-             
-             {/* Updated Startup Icon to Rocket */}
              <StatBoxCompact label="Startup" value={`${stats.startKg.toFixed(1)} kg`} icon={<Rocket className="w-4 h-4 text-white"/>} color="from-amber-500 to-orange-500" />
          </div>
        </div>
@@ -231,7 +237,6 @@ const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) =
             <DailyCardView data={filteredData} onEditRow={setEditingRow} />
        </div>
 
-       {/* POPUP MODAL */}
        {editingRow && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/70 animate-in fade-in zoom-in-95 duration-200">
               <DefectModalContent row={editingRow} onClose={() => setEditingRow(null)} onSave={handleSaveDefects} categories={availableCategories} />
@@ -241,16 +246,14 @@ const QualityTab: React.FC<Props> = ({ data, allData, onUpdate, adminConfig }) =
   );
 };
 
-// --- SUB COMPONENTS ---
-
-const StatBoxCompact = ({ label, value, icon, color }: any) => (
+const StatBoxCompact: React.FC<StatBoxProps> = ({ label, value, icon, color }) => (
     <div className="bg-white dark:bg-[#1e293b] p-2.5 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-3">
         <div className={`p-1.5 rounded-lg bg-gradient-to-br ${color} shadow-sm`}>{icon}</div>
         <div><span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 block leading-tight">{label}</span><span className="text-sm font-black text-slate-800 dark:text-white leading-tight">{value}</span></div>
     </div>
 );
 
-const DailyCardView = ({ data, onEditRow }: { data: any[], onEditRow: (r: any) => void }) => {
+const DailyCardView: React.FC<DailyViewProps> = ({ data, onEditRow }) => {
     const groupedByDate = useMemo(() => {
         const groups: Record<string, any[]> = {};
         data.forEach(r => { if (!groups[r.date]) groups[r.date] = []; groups[r.date].push(r); });
@@ -260,8 +263,7 @@ const DailyCardView = ({ data, onEditRow }: { data: any[], onEditRow: (r: any) =
     return <div className="space-y-3 p-1">{dates.map(date => <ExpandableDailyCard key={date} date={date} items={groupedByDate[date]} onEditRow={onEditRow} />)}</div>;
 };
 
-// --- TABLE VIEW (Cleaned for Web App Display) ---
-const ExpandableDailyCard = ({ date, items, onEditRow }: { date: string, items: any[], onEditRow: (r: any) => void }) => {
+const ExpandableDailyCard: React.FC<ExpandableCardProps> = ({ date, items, onEditRow }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dayTotalProd = items.reduce((s, i) => s + i.wgtTotal, 0); 
     const dayTotalRej = items.reduce((s, i) => s + i.wgtReject + i.wgtStartup, 0);
@@ -343,7 +345,7 @@ const ExpandableDailyCard = ({ date, items, onEditRow }: { date: string, items: 
     );
 };
 
-const DefectModalContent = ({ row, onClose, onSave, categories }: { row: any, onClose: () => void, onSave: (id: string, d: string, t: string, defs: DefectEntry[]) => void, categories: string[] }) => {
+const DefectModalContent: React.FC<ModalProps> = ({ row, onClose, onSave, categories }) => {
     const [defects, setDefects] = useState<DefectEntry[]>([]);
     const [selectedCat, setSelectedCat] = useState(categories[0] || "");
     const [tempQty, setTempQty] = useState('');
@@ -356,6 +358,7 @@ const DefectModalContent = ({ row, onClose, onSave, categories }: { row: any, on
     const handleAdd = () => {
         const qty = parseInt(tempQty);
         if (!qty || qty <= 0 || !selectedCat) return;
+        
         const exists = defects.find(d => d.defectName === selectedCat);
         if (exists) {
             setDefects(defects.map(d => d.defectName === selectedCat ? { ...d, qty: d.qty + qty } : d));

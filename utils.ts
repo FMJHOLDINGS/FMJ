@@ -227,7 +227,6 @@ export const exportToExcel = async (
     const totalRow = worksheet.addRow(['TOTAL', '', '', '', '', tPlanQty, tAchvQty, tRejQty, tStartQty, tAccQty, tPlanKg.toFixed(2), tAchvKg.toFixed(2), tLostQty, tLostKg.toFixed(2)]);
     totalRow.eachCell((cell) => { cell.font = { bold: true }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; cell.alignment = { horizontal: 'right' }; cell.border = { top: { style: 'double' }, bottom: { style: 'thick' } }; });
     
-    // ERROR FIXED HERE: Removed double dots
     worksheet.mergeCells(`A${totalRow.number}:E${totalRow.number}`);
     
     worksheet.getCell(`A${totalRow.number}`).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -235,4 +234,23 @@ export const exportToExcel = async (
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     saveAs(blob, `Production_Report_${filters.type}.xlsx`);
+};
+
+// --- NEW FUNCTION ADDED FOR TEMPLATE DOWNLOAD ---
+// මෙය භාවිතා කිරීමෙන් Error එක නැති වී Template එක Download වේ.
+export const downloadTemplate = async () => {
+  try {
+    // CORRECT PATH for GitHub Pages / Public Folder
+    const response = await fetch('./template/report_template.xlsx');
+    
+    if (!response.ok) {
+        throw new Error('Template file not found. Check public/template folder.');
+    }
+
+    const blob = await response.blob();
+    saveAs(blob, 'report_template.xlsx');
+  } catch (error) {
+    console.error('Template Download Failed:', error);
+    alert('Template Error: Check public/template/report_template.xlsx');
+  }
 };

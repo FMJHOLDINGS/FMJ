@@ -2,11 +2,14 @@
   "name": "prodsystem-pro-dashboard",
   "private": true,
   "version": "0.0.0",
+  "homepage": "https://FMJHOLDINGS.github.io/FMJ",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@fortune-sheet/react": "^1.0.4",
@@ -14,19 +17,21 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "firebase": "^12.7.0",
+    "framer-motion": "^12.27.5",
     "handsontable": "^16.2.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.460.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "recharts": "^2.15.0",
+    "recharts": "^2.15.4",
     "xlsx": "^0.18.5",
     "xlsx-populate": "^1.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "gh-pages": "^6.3.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

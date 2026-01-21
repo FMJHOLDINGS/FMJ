@@ -1,17 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProductionRow, AdminConfig } from '../types';
 import { calculateMetrics } from '../utils';
 import {
   Trash2,
-  Activity,
   ChevronDown,
-  PenLine,
-  Database,
-  Clock,
-  Settings,
-  Package,
+  ChevronUp,
   AlertTriangle,
-  Zap
+  Zap,
+  MoreHorizontal,
+  Clock,
+  Package,
+  Target,
+  BarChart2,
+  TrendingDown,
+  Activity
 } from 'lucide-react';
 
 interface Props {
@@ -20,64 +22,70 @@ interface Props {
   onDeleteRow: (id: string) => void;
   onOpenBreakdowns: (id: string) => void;
   adminConfig: AdminConfig;
-  isFormMode?: boolean;
 }
 
-// --- OPTIMIZED INPUT COMPONENT ---
-const TableInput = ({ value, onSave, placeholder, className, type = 'text' }: any) => {
+// Number Formatter
+const formatVal = (val: number | undefined | null) => {
+  if (val === undefined || val === null || isNaN(val)) return '0';
+  return Number(val.toFixed(1)).toString();
+};
+
+// --- STYLED INPUT COMPONENT ---
+const TableInput = ({ 
+  value, 
+  onSave, 
+  placeholder, 
+  className, 
+  type = 'text', 
+  label, 
+  icon: Icon, 
+  colorClass = 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100',
+  readOnly = false
+}: any) => {
   const [localValue, setLocalValue] = useState(value);
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    if (!isEditing) {
-      setLocalValue(value === 0 ? '' : value.toString());
-    }
+    if (!isEditing) setLocalValue(value === 0 ? '' : formatVal(value));
   }, [value, isEditing]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value;
-    if (type === 'number') {
-        if (v === '' || /^\d*\.?\d*$/.test(v)) setLocalValue(v);
-    } else {
-        setLocalValue(v);
-    }
-  };
-
   const commitChanges = () => {
+    if (readOnly) return;
     setIsEditing(false);
     let finalVal = localValue;
     if (type === 'number') {
-        if (!finalVal || finalVal === '' || finalVal === '.') finalVal = '0';
-        const numVal = parseFloat(finalVal);
-        if (numVal !== value) onSave(numVal);
+      if (!finalVal || finalVal === '' || finalVal === '.' || finalVal === '-') finalVal = '0';
+      const numVal = parseFloat(finalVal);
+      if (numVal !== value) onSave(numVal);
     } else {
-        if (finalVal !== value) onSave(finalVal);
+      if (finalVal !== value) onSave(finalVal);
     }
   };
 
-  const handleBlur = () => commitChanges();
-  
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') e.currentTarget.blur();
-  };
-
-  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    setIsEditing(true);
-    e.target.select();
-  };
-
   return (
-    <input
-      type="text"
-      inputMode={type === 'number' ? 'decimal' : 'text'}
-      value={localValue === 0 && !isEditing ? '' : localValue}
-      onChange={handleChange}
-      onBlur={handleBlur}
-      onFocus={handleFocus}
-      onKeyDown={handleKeyDown}
-      className={className}
-      placeholder={placeholder}
-    />
+    <div className={`relative group/input w-full h-10 rounded-xl border-2 overflow-hidden transition-all duration-200 flex flex-col justify-center ${colorClass} ${className}`}>
+      {/* Label - ENHANCED VISIBILITY */}
+      <div className="absolute top-[2px] left-2 flex items-center gap-1 z-10 pointer-events-none">
+        {Icon && <Icon size={9} strokeWidth={3} className="opacity-70" />}
+        <span className="text-[10px] font-black uppercase tracking-wider leading-none text-slate-600 dark:text-slate-400">
+          {label}
+        </span>
+      </div>
+      
+      {/* Input Field */}
+      <input
+        type="text"
+        inputMode={type === 'number' ? 'decimal' : 'text'}
+        value={localValue === 0 && !isEditing ? '' : localValue}
+        onChange={(e) => !readOnly && setLocalValue(e.target.value)}
+        onBlur={commitChanges}
+        onFocus={(e) => { if(!readOnly) { setIsEditing(true); e.target.select(); } }}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        readOnly={readOnly}
+        className={`w-full h-full bg-transparent text-center font-black text-sm pt-3 outline-none px-1 ${readOnly ? 'cursor-default' : ''}`}
+        placeholder={placeholder}
+      />
+    </div>
   );
 };
 
@@ -87,12 +95,23 @@ const ProductionTable: React.FC<Props> = ({
   onDeleteRow,
   onOpenBreakdowns,
   adminConfig,
-  isFormMode,
 }) => {
   const allItems = adminConfig?.productionItems || [];
   const uniqueMachines = Array.from(new Set(allItems.map((m) => m.machine))).sort();
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
+  const toggleRow = (id: string) => setExpandedRow(expandedRow === id ? null : id);
+
+  // CSS for Electric Button, Time Input & Dropdowns
   const styles = `
+    /* Hides the clock icon in time inputs */
+    input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+    
+    /* Better Dropdown Colors in Dark Mode */
+    select option { background-color: #ffffff; color: #334155; }
+    :root.dark select option { background-color: #0f172a; color: #e2e8f0; }
+
+    /* Electric Button Animation */
     .electric-btn-container { position: relative; display: inline-block; width: 100%; height: 100%; overflow: hidden; border-radius: 0.5rem; background: #0f172a; }
     .electric-btn-container span { position: absolute; display: block; }
     .electric-btn-container span:nth-child(1) { top: 0; left: -100%; width: 100%; height: 2px; background: linear-gradient(90deg, transparent, #00f2ff, #00f2ff); animation: btn-anim1 1.5s linear infinite; }
@@ -107,33 +126,9 @@ const ProductionTable: React.FC<Props> = ({
     .electric-btn-container:hover .electric-btn-content { background: #0f172a; box-shadow: 0 0 10px #00f2ff, 0 0 20px #00f2ff; color: #fff; }
     :root:not(.dark) .electric-btn-content { background: #f8fafc; color: #0284c7; }
     :root:not(.dark) .electric-btn-container:hover .electric-btn-content { background: #e0f2fe; }
-    
-    /* HIDE DEFAULT SELECT ARROW */
-    select.custom-select {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
-        background-image: none; 
-    }
-    select.custom-select::-ms-expand { display: none; }
-    
-    select.custom-select option { background-color: #ffffff; color: #1e293b; }
-    :root.dark select.custom-select option { background-color: #1e293b; color: #f1f5f9; }
   `;
 
-  if (rows.length === 0) {
-    return (
-      <div className="p-8 text-center rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/30 flex flex-col items-center justify-center gap-3 animate-fade-in my-4">
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isFormMode ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-400' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-400'}`}>
-          {isFormMode ? <PenLine className="w-6 h-6" /> : <Database className="w-6 h-6" />}
-        </div>
-        <div>
-          <p className="text-slate-600 dark:text-slate-400 font-black uppercase text-[10px] tracking-[0.2em]">{isFormMode ? 'Shift Ready' : 'No Records'}</p>
-          <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold">Add a row to start.</p>
-        </div>
-      </div>
-    );
-  }
+  if (rows.length === 0) return null;
 
   return (
     <div className="space-y-3 pb-10">
@@ -141,111 +136,166 @@ const ProductionTable: React.FC<Props> = ({
       {rows.map((row) => {
         const m = calculateMetrics(row);
         const machineItems = allItems.filter((item) => item.machine === row.machine);
+        const isExpanded = expandedRow === row.id;
 
         return (
-          <div key={row.id} className="group relative bg-white dark:bg-[#0F172A] rounded-2xl p-3 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all duration-200 animate-fade-in w-full">
-            <button onClick={() => onDeleteRow(row.id)} className="absolute top-2 right-2 p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 border border-transparent hover:border-rose-200 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-20" title="Delete Row"><Trash2 className="w-3.5 h-3.5" /></button>
-
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-center">
+          <div key={row.id} className="bg-white dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all duration-300 animate-fade-in overflow-hidden">
+            
+            {/* --- HEADER ROW (ALWAYS VISIBLE) --- */}
+            <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3">
               
-              {/* 1. TIMELINE & MACHINE */}
-              <div className="xl:col-span-3 space-y-2 xl:border-r border-slate-100 dark:border-slate-800 xl:pr-3">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Timeline</span>
-                </div>
-                <div className="flex gap-2">
-                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg px-1 py-1 flex-1 border border-slate-100 dark:border-slate-700 text-center">
-                    <input type="time" value={row.startTime} onChange={(e) => onUpdateRow(row.id, { startTime: e.target.value })} className="w-full bg-transparent text-center font-bold text-slate-700 dark:text-slate-200 outline-none text-xs p-0 dark:[color-scheme:dark]" />
-                  </div>
-                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg px-1 py-1 flex-1 border border-slate-100 dark:border-slate-700 text-center">
-                    <input type="time" value={row.endTime} onChange={(e) => onUpdateRow(row.id, { endTime: e.target.value })} className="w-full bg-transparent text-center font-bold text-slate-700 dark:text-slate-200 outline-none text-xs p-0 dark:[color-scheme:dark]" />
-                  </div>
-                </div>
-                <div className="relative">
-                  {/* MACHINE DROPDOWN - Custom Class Added */}
-                  <select value={row.machine} onChange={(e) => onUpdateRow(row.id, { machine: e.target.value, product: '' })} 
-                      className="custom-select w-full py-1.5 pl-3 pr-8 bg-indigo-50 dark:bg-indigo-900/20 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-700 rounded-lg text-center font-black text-indigo-700 dark:text-indigo-400 outline-none cursor-pointer text-xs uppercase tracking-wide transition-colors">
-                    <option value="">SELECT MAC</option>
-                    {uniqueMachines.map((mc) => (<option key={mc} value={mc}>{mc}</option>))}
-                  </select>
-                  <Settings className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-indigo-400 opacity-50 pointer-events-none" />
-                </div>
+              {/* 1. TIME INPUT (Digital Look) */}
+              <div className="flex bg-slate-100 dark:bg-slate-900 rounded-lg border-2 border-slate-200 dark:border-slate-700 overflow-hidden h-9 items-center px-1 shadow-inner">
+                <Clock size={12} className="text-slate-400 mr-1 shrink-0" />
+                <input type="time" value={row.startTime} onChange={(e) => onUpdateRow(row.id, { startTime: e.target.value })} className="w-14 bg-transparent text-center font-black text-xs text-slate-700 dark:text-white outline-none p-0 tracking-tighter" />
+                <span className="text-[10px] text-slate-400 mx-0.5 font-bold">-</span>
+                <input type="time" value={row.endTime} onChange={(e) => onUpdateRow(row.id, { endTime: e.target.value })} className="w-14 bg-transparent text-center font-black text-xs text-slate-700 dark:text-white outline-none p-0 tracking-tighter" />
+              </div>
+              
+              {/* 2. MACHINE SELECT (High Contrast) */}
+              <div className="relative w-20 h-9 shrink-0">
+                <select value={row.machine} onChange={(e) => onUpdateRow(row.id, { machine: e.target.value, product: '' })} 
+                    className="w-full h-full pl-2 pr-1 bg-indigo-100 dark:bg-indigo-950/50 border-2 border-indigo-200 dark:border-indigo-800 rounded-lg font-black text-indigo-700 dark:text-indigo-300 outline-none text-[10px] uppercase cursor-pointer text-center appearance-none hover:bg-indigo-200 dark:hover:bg-indigo-900/40 transition-colors">
+                  <option value="">MC</option>
+                  {uniqueMachines.map((mc) => (<option key={mc} value={mc}>{mc}</option>))}
+                </select>
               </div>
 
-              {/* 2. PRODUCT & SPECS */}
-              <div className="xl:col-span-4 space-y-2 xl:border-r border-slate-100 dark:border-slate-800 xl:pr-3">
-                <div className="flex items-center gap-2">
-                  <Package className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Product</span>
-                </div>
-                <div className="relative">
-                  {/* PRODUCT DROPDOWN - Custom Class Added */}
-                  <select value={row.product} onChange={(e) => { const selected = machineItems.find((i) => i.itemName === e.target.value); onUpdateRow(row.id, { product: e.target.value, unitWeight: selected ? selected.unitWeight : row.unitWeight }); }} 
-                      className="custom-select w-full py-1.5 pl-3 pr-8 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-lg font-bold text-slate-700 dark:text-slate-200 outline-none text-xs truncate transition-all cursor-pointer">
-                    <option value="">{row.machine ? 'Select Product...' : 'Select Machine First'}</option>
-                    {machineItems.map((item) => (<option key={item.id} value={item.itemName}>{item.itemName} {item.jobNo ? `(${item.jobNo})` : ''}</option>))}
+              {/* 3. PRODUCT SELECTOR (Clear Text) */}
+              <div className="flex-grow min-w-[120px] h-9 relative">
+                 <Package size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 z-10" />
+                 <select value={row.product} onChange={(e) => { const selected = machineItems.find((i) => i.itemName === e.target.value); onUpdateRow(row.id, { product: e.target.value, unitWeight: selected ? selected.unitWeight : row.unitWeight }); }} 
+                      className="w-full h-full pl-7 pr-6 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg font-bold text-slate-700 dark:text-slate-200 outline-none text-[11px] truncate cursor-pointer appearance-none hover:border-slate-300 transition-colors">
+                    <option value="">Select Product...</option>
+                    {machineItems.map((item) => (<option key={item.id} value={item.itemName}>{item.itemName}</option>))}
                     <option value="Manual Entry">Manual Entry</option>
                   </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                </div>
-                <div className="grid grid-cols-4 gap-1.5">
-                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
-                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Wt</label>
-                      <TableInput type="number" value={row.unitWeight} onSave={(v: number) => onUpdateRow(row.id, { unitWeight: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
-                   </div>
-                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
-                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Cyc</label>
-                      <TableInput type="number" value={row.cycleTime || 0} onSave={(v: number) => onUpdateRow(row.id, { cycleTime: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
-                   </div>
-                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
-                      <label className="block text-[7px] font-bold text-slate-400 uppercase mb-0.5">Cav</label>
-                      <TableInput type="number" value={row.cavities} onSave={(v: number) => onUpdateRow(row.id, { cavities: v })} placeholder="1" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-slate-700 dark:text-slate-200" />
-                   </div>
-                   <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-1 border border-slate-100 dark:border-slate-700 text-center hover:border-indigo-200 transition-colors">
-                      <label className="block text-[7px] font-bold text-indigo-400 uppercase mb-0.5">Q/H</label>
-                      <TableInput type="number" value={row.qtyPerHour} onSave={(v: number) => onUpdateRow(row.id, { qtyPerHour: v })} placeholder="0" className="w-full bg-transparent text-center font-bold outline-none text-xs p-0 text-indigo-600 dark:text-indigo-400" />
-                   </div>
-                </div>
+                  <ChevronDown size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
 
-              {/* 3. OUTPUT & QUALITY */}
-              <div className="xl:col-span-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2"><Activity className="w-3 h-3 text-emerald-500" /><span className="text-[9px] font-black uppercase text-emerald-500 tracking-wider">Output</span></div>
-                  {isFormMode && (<span className="text-[9px] font-black text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Plan: {m.planQty}</span>)}
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-1.5 border-b-2 border-slate-300 dark:border-slate-600">
-                    <span className="block text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase">Gross</span>
-                    <TableInput type="number" value={row.achievedQty} onSave={(v: number) => onUpdateRow(row.id, { achievedQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-300 p-0" />
-                  </div>
-                  <div className="bg-rose-50 dark:bg-rose-950/30 rounded-lg p-1.5 border-b-2 border-rose-200 dark:border-rose-800">
-                    <span className="block text-[7px] font-black text-rose-400 uppercase">Rej</span>
-                    <TableInput type="number" value={row.rejectionQty || 0} onSave={(v: number) => onUpdateRow(row.id, { rejectionQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-rose-600 dark:text-rose-400 outline-none placeholder:text-rose-200 p-0" />
-                  </div>
-                  <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-1.5 border-b-2 border-amber-200 dark:border-amber-800">
-                    <span className="block text-[7px] font-black text-amber-500 uppercase">Start</span>
-                    <TableInput type="number" value={row.startupQty || 0} onSave={(v: number) => onUpdateRow(row.id, { startupQty: v })} placeholder="0" className="w-full bg-transparent font-black text-sm text-amber-600 dark:text-amber-400 outline-none placeholder:text-amber-200 p-0" />
-                  </div>
-                  <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-lg p-1.5 border-b-2 border-emerald-300 dark:border-emerald-700 flex flex-col justify-center">
-                    <span className="block text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Good</span>
-                    <div className="font-black text-sm text-emerald-700 dark:text-emerald-300 truncate">{m.acceptedQty}</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-12 gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="col-span-6 h-8">
-                    <button onClick={() => onOpenBreakdowns(row.id)} className="w-full h-full relative group outline-none">
-                      {m.bdMins > 0 ? (
-                        <div className="w-full h-full bg-rose-500 rounded-lg flex items-center justify-center gap-2 animate-pulse shadow-md text-white"><AlertTriangle className="w-3 h-3" /><span className="text-[9px] font-black uppercase">{m.bdMins}m Down</span></div>
-                      ) : (
-                        <div className="electric-btn-container"><span></span><span></span><span></span><span></span><div className="electric-btn-content"><Zap className="w-3 h-3" /> Log Breakdown</div></div>
-                      )}
-                    </button>
-                  </div>
-                  <div className="col-span-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg px-1 py-0.5 text-center flex flex-col justify-center border border-amber-100 dark:border-amber-900/30"><span className="text-[7px] font-bold text-amber-600/70 dark:text-amber-400/70 uppercase">Eff Loss</span><span className="text-xs font-black text-amber-600 dark:text-amber-400 leading-none">{m.efficiencyLossQty}</span></div>
-                  <div className="col-span-3 bg-rose-50/50 dark:bg-rose-900/10 rounded-lg px-1 py-0.5 text-center flex flex-col justify-center border border-rose-100 dark:border-rose-900/30"><span className="text-[7px] font-bold text-rose-600/70 dark:text-rose-400/70 uppercase">Loss Kg</span><span className="text-xs font-black text-rose-600 dark:text-rose-400 leading-none">{m.lostKg}</span></div>
-                </div>
+              {/* 4. METRICS (DESKTOP ONLY) */}
+              <div className="hidden md:flex items-center gap-3 bg-slate-50 dark:bg-slate-900 px-3 py-0.5 rounded-lg border-2 border-slate-100 dark:border-slate-800 h-9 ml-auto">
+                 <div className="flex flex-col items-center justify-center min-w-[45px]">
+                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-wider leading-none mb-0.5">Plan</span>
+                    <span className="text-xs font-black text-slate-700 dark:text-white leading-none">{formatVal(m.planQty)}</span>
+                 </div>
+                 <div className="w-px h-5 bg-slate-200 dark:bg-slate-700"></div>
+                 <div className="flex flex-col items-center justify-center min-w-[45px]">
+                    <span className="text-[7px] font-black text-emerald-500 uppercase tracking-wider leading-none mb-0.5">Done</span>
+                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 leading-none">{formatVal(row.achievedQty)}</span>
+                 </div>
+                 <div className="w-px h-5 bg-slate-200 dark:bg-slate-700"></div>
+                 <div className="flex flex-col items-center justify-center min-w-[45px]">
+                    <span className="text-[7px] font-black text-amber-500 uppercase tracking-wider leading-none mb-0.5">Loss</span>
+                    <span className="text-xs font-black text-amber-600 dark:text-amber-400 leading-none">{formatVal(m.efficiencyLossQty)}</span>
+                 </div>
+              </div>
+
+              {/* 5. ACTIONS */}
+              <div className="flex items-center gap-1 ml-auto md:ml-0 h-9">
+                 <button onClick={() => toggleRow(row.id)} className={`h-9 w-9 flex items-center justify-center rounded-lg border-2 transition-all ${isExpanded ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    {isExpanded ? <ChevronUp size={16} strokeWidth={3} /> : <MoreHorizontal size={16} strokeWidth={3} />}
+                 </button>
+                 <button onClick={() => onDeleteRow(row.id)} className="h-9 w-9 flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
               </div>
             </div>
+
+            {/* --- MOBILE METRICS BAR (ALWAYS VISIBLE ON MOBILE) --- */}
+            {/* මෙය Collapsed හෝ Expanded ඕනෑම අවස්ථාවක Mobile එකේ පෙන්වයි */}
+            <div className="md:hidden flex border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+               <div className="flex-1 flex items-center justify-between px-4 py-1.5">
+                  <div className="flex items-center gap-2">
+                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wide">PLAN</span>
+                     <span className="text-xs font-black text-slate-700 dark:text-white">{formatVal(m.planQty)}</span>
+                  </div>
+                  <div className="w-px h-3 bg-slate-300 dark:border-slate-600"></div>
+                  <div className="flex items-center gap-2">
+                     <span className="text-[9px] font-black text-emerald-500 uppercase tracking-wide">DONE</span>
+                     <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{formatVal(row.achievedQty)}</span>
+                  </div>
+                  <div className="w-px h-3 bg-slate-300 dark:border-slate-600"></div>
+                  <div className="flex items-center gap-2">
+                     <span className="text-[9px] font-black text-amber-500 uppercase tracking-wide">LOSS</span>
+                     <span className="text-xs font-black text-amber-600 dark:text-amber-400">{formatVal(m.efficiencyLossQty)}</span>
+                  </div>
+               </div>
+            </div>
+
+            {/* --- EXPANDABLE INPUT AREA --- */}
+            {(isExpanded || window.innerWidth >= 1280) && (
+               <div className={`px-3 pb-3 pt-2 text-xs border-t border-slate-100 dark:border-slate-800/50 ${isExpanded ? 'block' : 'hidden xl:block'}`}>
+                  
+                  <div className="grid grid-cols-12 gap-3">
+                    {/* ROW 1: SPECS */}
+                    <div className="col-span-12 sm:col-span-6 xl:col-span-3 grid grid-cols-4 gap-2 items-end">
+                        <TableInput type="number" value={row.unitWeight} onSave={(v: any) => onUpdateRow(row.id, { unitWeight: v })} placeholder="0" label="Weight" />
+                        <TableInput type="number" value={row.cycleTime || 0} onSave={(v: any) => onUpdateRow(row.id, { cycleTime: v })} placeholder="0" label="Cycle" />
+                        <TableInput type="number" value={row.cavities} onSave={(v: any) => onUpdateRow(row.id, { cavities: v })} placeholder="1" label="Cavity" />
+                        <TableInput type="number" value={row.qtyPerHour} onSave={(v: any) => onUpdateRow(row.id, { qtyPerHour: v })} placeholder="0" label="Q/Hr" colorClass="bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300" />
+                    </div>
+
+                    {/* ROW 2: COUNTS (Colored & Clear) */}
+                    <div className="col-span-12 sm:col-span-6 xl:col-span-5 grid grid-cols-4 gap-2 items-end">
+                        <div className="col-span-1">
+                          <TableInput 
+                            type="number" value={row.achievedQty} onSave={(v: any) => onUpdateRow(row.id, { achievedQty: v })} 
+                            placeholder="0" label="GROSS" icon={Target}
+                            colorClass="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white shadow-sm" 
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <TableInput 
+                            type="number" value={row.rejectionQty || 0} onSave={(v: any) => onUpdateRow(row.id, { rejectionQty: v })} 
+                            placeholder="0" label="REJECT" icon={AlertTriangle}
+                            colorClass="bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400" 
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <TableInput 
+                            type="number" value={row.startupQty || 0} onSave={(v: any) => onUpdateRow(row.id, { startupQty: v })} 
+                            placeholder="0" label="START" icon={BarChart2}
+                            colorClass="bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400" 
+                          />
+                        </div>
+                        <div className="col-span-1">
+                            <div className="relative w-full h-10 flex flex-col justify-center bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 shadow-sm">
+                                <div className="absolute top-[2px] left-2 flex items-center gap-1 opacity-90">
+                                    <Activity size={8} strokeWidth={3} className="text-emerald-600 dark:text-emerald-400" />
+                                    <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">GOOD</span>
+                                </div>
+                                <div className="text-center font-black text-sm text-emerald-700 dark:text-emerald-300 pt-3">
+                                    {formatVal(m.acceptedQty)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ROW 3: ANALYSIS (Buttons) */}
+                    <div className="col-span-12 xl:col-span-4 grid grid-cols-3 gap-2">
+                        <button onClick={() => onOpenBreakdowns(row.id)} className="h-10 w-full relative group outline-none">
+                          {m.bdMins > 0 ? (
+                            <div className="w-full h-full bg-rose-500 rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-rose-500/30 text-white border-2 border-rose-400 hover:bg-rose-600 transition-all"><AlertTriangle size={12} strokeWidth={3} /><span className="text-[10px] font-black uppercase">{m.bdMins}m Down</span></div>
+                          ) : (
+                            <div className="electric-btn-container"><span></span><span></span><span></span><span></span><div className="electric-btn-content"><Zap size={12} /> Log BD</div></div>
+                          )}
+                        </button>
+
+                        <div className="h-10 flex flex-col items-center justify-center px-1 bg-amber-50 dark:bg-amber-900/10 rounded-xl border-2 border-amber-100 dark:border-amber-900/30">
+                            <div className="flex items-center gap-1 opacity-80 mb-0.5">
+                              <TrendingDown size={9} className="text-amber-600 dark:text-amber-400" />
+                              <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">EFF LOSS</span>
+                            </div>
+                            <span className="text-xs font-black text-amber-700 dark:text-amber-300 leading-none">{formatVal(m.efficiencyLossQty)}</span>
+                        </div>
+
+                        <div className="h-10 flex flex-col items-center justify-center px-1 bg-slate-100 dark:bg-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">LOSS KG</span>
+                            <span className="text-xs font-black text-slate-600 dark:text-slate-300 leading-none">{formatVal(m.lostKg)}</span>
+                        </div>
+                    </div>
+                  </div>
+               </div>
+            )}
           </div>
         );
       })}

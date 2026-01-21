@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AdminConfig, ProductionItem, MachineType, ProductType } from '../types';
-import { Plus, Trash2, Database, AlertOctagon, Settings, Users, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Database, AlertOctagon, Settings, Users, ShieldAlert, HardDrive } from 'lucide-react';
+import StorageManager from './StorageManager'; // Import Storage Manager
 
 interface Props {
    config: AdminConfig;
@@ -8,7 +9,8 @@ interface Props {
 }
 
 const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
-   const [activeTab, setActiveTab] = useState<'ITEMS' | 'CATS' | 'TEAMS' | 'QA'>('ITEMS');
+   // Added 'STORAGE' to activeTab state
+   const [activeTab, setActiveTab] = useState<'ITEMS' | 'CATS' | 'TEAMS' | 'QA' | 'STORAGE'>('ITEMS');
    const [activeMachineType, setActiveMachineType] = useState<MachineType>('IM'); 
 
    // --- ITEM STATE ---
@@ -29,7 +31,7 @@ const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
    const [newTeam, setNewTeam] = useState('');
    const [teamError, setTeamError] = useState<string>('');
 
-   // Safe Initialization (Prevents Crash)
+   // Safe Initialization
    useEffect(() => {
        if (onUpdate && config) {
            const safeConfig = {
@@ -38,16 +40,16 @@ const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
                shiftTeams: config.shiftTeams || [],
                qaCategories: (config as any).qaCategories || []
            };
-           // Only update if something is missing to prevent infinite loops
+           // Only update if something is missing
            if (!config.productionItems || !(config as any).qaCategories) {
                onUpdate(safeConfig as AdminConfig);
            }
        }
-   }, [onUpdate]); // Added dependency to prevent stale closure
+   }, [onUpdate]);
 
    // 1. ADD ITEM
    const addItem = () => {
-      if (!onUpdate) return; // Safety check
+      if (!onUpdate) return; 
 
       const errors: Record<string, boolean> = {};
       if (!newItem.machine?.trim()) errors.machine = true;
@@ -161,7 +163,6 @@ const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
          return;
       }
 
-      // Safe update with type assertion
       const updatedConfig = { 
           ...config, 
           qaCategories: [...currentDefects, trimmedDefect] 
@@ -205,6 +206,8 @@ const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
                <TabButton active={activeTab === 'CATS'} icon={AlertOctagon} label="Breakdowns" onClick={() => setActiveTab('CATS')} color="rose" />
                <TabButton active={activeTab === 'QA'} icon={ShieldAlert} label="QA Defects" onClick={() => setActiveTab('QA')} color="amber" />
                <TabButton active={activeTab === 'TEAMS'} icon={Users} label="Teams" onClick={() => setActiveTab('TEAMS')} color="emerald" />
+               {/* Added STORAGE Tab Button */}
+               <TabButton active={activeTab === 'STORAGE'} icon={HardDrive} label="Storage" onClick={() => setActiveTab('STORAGE')} color="cyan" />
             </div>
          </div>
 
@@ -391,6 +394,12 @@ const AdminTab: React.FC<Props> = ({ config, onUpdate }) => {
                </div>
             </div>
          )}
+
+         {/* --- TAB 5: STORAGE MANAGEMENT (NEW) --- */}
+         {activeTab === 'STORAGE' && (
+             <StorageManager onRefresh={() => window.location.reload()} />
+         )}
+
       </div>
    );
 };
@@ -401,6 +410,7 @@ const TabButton = ({ active, icon: Icon, label, onClick, color }: any) => {
         rose: active ? 'bg-rose-500 text-white shadow-lg' : 'text-slate-500 hover:text-rose-500',
         amber: active ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-500 hover:text-amber-500',
         emerald: active ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-500 hover:text-emerald-500',
+        cyan: active ? 'bg-cyan-500 text-white shadow-lg' : 'text-slate-500 hover:text-cyan-500',
     };
 
     return (
