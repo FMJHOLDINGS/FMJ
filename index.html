@@ -1,28 +1,13 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProdSystem Pro | FMJ Manufacturing</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Plus Jakarta Sans', 'sans-serif'],
-          },
-        }
-      }
-    }
-  </script>
+  
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
   <style>
-
-    /* ... (ඔබේ දැනට තියෙන CSS එලෙසම තියන්න) ... */
-
     /* === Electrical Border Animation === */
     @keyframes slide-right {
       0% { transform: translateX(-100%); opacity: 0; }
@@ -53,16 +38,12 @@
       animation: pulse-slow 3s ease-in-out infinite;
     }
 
-
-
-
     body { font-family: 'Plus Jakarta Sans', sans-serif; }
-    /* === Enhanced Custom Scrollbar === */
     
-    /* Width & General Style */
+    /* === Enhanced Custom Scrollbar === */
     .custom-scrollbar::-webkit-scrollbar { 
-      width: 10px;        /* Increased width for visibility */
-      height: 10px;       /* Increased height for horizontal scroll */
+      width: 10px;
+      height: 10px;
     }
     
     /* Track (Background) */
@@ -70,36 +51,30 @@
       background: rgba(0, 0, 0, 0.05); 
       border-radius: 8px;
     }
+    /* Dark mode scrollbar track handled via CSS classes usually, 
+       but keeping this specific style here as fallback */
     .dark .custom-scrollbar::-webkit-scrollbar-track { 
       background: rgba(255, 255, 255, 0.05); 
     }
 
     /* Thumb (The Moving Part) */
     .custom-scrollbar::-webkit-scrollbar-thumb { 
-      background: #94a3b8; /* Slate-400 - Much more visible than before */
+      background: #94a3b8; 
       border-radius: 8px; 
       border: 2px solid transparent; 
-      background-clip: content-box; /* Makes it look nicer with padding */
+      background-clip: content-box; 
     }
     
     .dark .custom-scrollbar::-webkit-scrollbar-thumb { 
-      background: #475569; /* Slate-600 for Dark Mode */
+      background: #475569; 
     }
 
     /* Hover Effect */
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { 
-      background: #64748b; /* Slate-500 on hover */
-    }
-    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { 
-      background: #64748b; /* Lighter on hover in dark mode */
+      background: #64748b; 
     }
     
-    /* Corner */
-    .custom-scrollbar::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    /* Glass Effect Utilities (Keep existing) */
+    /* Glass Effect Utilities */
     .glass-card {
       background: rgba(255, 255, 255, 0.8);
       backdrop-filter: blur(12px);
@@ -118,18 +93,17 @@
     .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
   </style>
 
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
-  }
-}
-</script>
-  <script type="module" crossorigin src="/FMJ/assets/index-BmvGDM4A.js"></script>
+  <script>
+    // LocalStorage එකේ 'dark' තිබේද හෝ System එක Dark ද කියා පරීක්ෂා කරයි
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  </script>
+
+  <script type="module" crossorigin src="/FMJ/assets/index-B0TB6Dad.js"></script>
+  <link rel="stylesheet" crossorigin href="/FMJ/assets/index-x_L6HpYn.css">
 </head>
 <body class="bg-[#F8FAFC] text-[#0F172A] dark:bg-[#020617] dark:text-slate-200 overflow-hidden transition-colors duration-300">
   <div id="root"></div>
