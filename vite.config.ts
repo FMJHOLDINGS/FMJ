@@ -11,8 +11,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
-    // GitHub Pages හෝ Deploy කරන තැනට අදාළ Base URL එක
-    base: '/FMJ/',
+    // 🔴 මෙන්න මේ පේළිය පමණයි වෙනස් වෙන්නේ! '/FMJ/' වෙනුවට './' යොදන්න.
+    base: './',
 
     server: {
       port: 3000,
@@ -25,7 +25,6 @@ export default defineConfig(({ mode }) => {
     },
 
     plugins: [
-
       react(),
       nodePolyfills({
         // xlsx-populate සඳහා අවශ්‍ය වන මූලික කොටස් අනිවාර්ය කිරීම
