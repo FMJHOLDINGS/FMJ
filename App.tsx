@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 // AuthContext එකෙන් ලොග් වී ඇති අයගේ විස්තර ලබා ගනී
 import { useAuth, AuthProvider } from './context/AuthContext';
 
+
 // [NEW IMPORTS] Auto Logout සඳහා අවශ්‍ය Firebase කොටස්
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -11,6 +12,8 @@ import { signOut } from 'firebase/auth';
 import AuthPage from './context/AuthPage'; // ලොග් වීමේ පිටුව
 import Dashboard from './context/Dashboard'; // සාමාන්‍ය Factory Dashboard එක
 import SuperAdminDashboard from './Dashboard/SuperAdminDashboard'; // [NEW] අලුත් Super Admin Dashboard එක
+
+import AutoUpdater from '././components/AutoUpdater';
 
 const AppContent = () => {
   // context එක හරහා දැනට ලොග් වී ඇති User (userData) සහ Loading තත්වය ලබා ගනී
@@ -75,6 +78,10 @@ export default function App() {
   return (
     <AuthProvider>
       <AppContent />
+
+      <AutoUpdater />
+
+
     </AuthProvider>
   );
 }
