@@ -11,18 +11,6 @@ npx tree-node-cli -I "node_modules|.git|dist|build" > structure.txt
 
 
 
-// 🟢 වෙනස 1: material වෙනුවට productType ලෙස සේව් වීමට
-            productType: 'Preform', materialPercent: 0, mbCode: '', mbPercent: 0, crushPercent: 0
-
-
-මෙ දෙක හොදට බලන්නකො.
-
-මෙකේ IM පැත්තට එක විදිහකුයි BM පැත්තට තව විදිහකුයිනෙ තියෙන්නෙ.
-
-මට ඔනේ IM ටැබ් එක තියෙනවා වගේම BM tab එකත් හදාගන්න.
-
-
-
-
-
-එ සදහා මම වෙනස් කල යුතු කෝඩ් කොටස කුමක්ද
+git add .
+git commit -m "Update version 0.1.1 and added new features"
+git push
