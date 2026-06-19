@@ -1,193 +1,224 @@
-import React, { useState, useMemo, KeyboardEvent, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { calculateMetrics, getDatesInRange } from '../utils';
-import { FileDown, Calendar, CheckSquare } from 'lucide-react';
-import MonthlyProduction from './MonthlyProduction';
-import BreakdownSummary from './BreakdownSummary';
-
-// Import Logic from the new file
-import { downloadDailyReportExcel, ATT_KEYS, STOCK_KEYS, fmt } from './DailyReportExporter';
+import { downloadDailyReportExcel, STOCK_KEYS } from './DailyReportExporter';
+import DailySummaryView from './DailySummaryView';
 
 interface Props {
   allData: Record<string, any>;
   date: string;
   breakdownCategories?: string[];
   onUpdate?: (key: string, data: any) => void;
+  loadDataForRange?: (start: string, end: string) => void;
+  readOnly?: boolean;
 }
 
-const INITIAL_ATT = { general: { a: '', p: '', ab: '' }, cnNight: { a: '', p: '', ab: '' }, shiftA: { a: '', p: '', ab: '' }, shiftB: { a: '', p: '', ab: '' }, training: { a: '', p: '', ab: '' }, new: { a: '', p: '', ab: '' }, total: { a: '', p: '', ab: '' }, req: { a: '', p: '', ab: '' }, balance: { a: '', p: '', ab: '' } };
+const INITIAL_ATT = { date: '', general: { a: '', p: '', ab: '' }, cnNight: { a: '', p: '', ab: '' }, shiftA: { a: '', p: '', ab: '' }, shiftB: { a: '', p: '', ab: '' }, training: { a: '', p: '', ab: '' }, new: { a: '', p: '', ab: '' }, total: { a: '', p: '', ab: '' }, req: { a: '', p: '', ab: '' }, balance: { a: '', p: '', ab: '' } };
 const INITIAL_STOCK = { pp: { o: '', r: '', rt: '', i: '', it: '', s: '' }, pet: { o: '', r: '', rt: '', i: '', it: '', s: '' }, ppcp: { o: '', r: '', rt: '', i: '', it: '', s: '' }, color: { o: '', r: '', rt: '', i: '', it: '', s: '' } };
 const INITIAL_REG = { dIM_mc: '', dIM_t: '', dBM_mc: '', dBM_t: '', d_GT: '', nIM_mc: '', nIM_t: '', nBM_mc: '', nBM_t: '', n_GT: '', tIM_mc: '', tIM_t: '', tBM_mc: '', tBM_t: '', t_GT: '' };
 const INITIAL_DEL = { imA: '', imM: '', bmA: '', bmM: '', totA: '', totM: '' };
 
-// --- HELPERS (UI Specific) ---
-const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, id: string) => {
-  const [section, rowStr, colStr] = id.split('-');
-  const row = parseInt(rowStr);
-  const col = parseInt(colStr);
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
-    let nextId = '';
-    if (e.key === 'ArrowUp') nextId = `${section}-${row - 1}-${col}`;
-    if (e.key === 'ArrowDown' || e.key === 'Enter') nextId = `${section}-${row + 1}-${col}`;
-    if (e.key === 'ArrowLeft') nextId = `${section}-${row}-${col - 1}`;
-    if (e.key === 'ArrowRight') nextId = `${section}-${row}-${col + 1}`;
-    const nextEl = document.getElementById(nextId);
-    if (nextEl) {
-      e.preventDefault();
-      nextEl.focus();
-    }
-  }
-};
+const getInitAtt = () => JSON.parse(JSON.stringify(INITIAL_ATT));
+const getInitStock = () => JSON.parse(JSON.stringify(INITIAL_STOCK));
+const getInitReg = () => JSON.parse(JSON.stringify(INITIAL_REG));
+const getInitDel = () => JSON.parse(JSON.stringify(INITIAL_DEL));
 
-const ReadOnlyCell = ({ val, suffix = '', color = '', bg = '' }: { val: string | number; suffix?: string; color?: string; bg?: string }) => (
-  <div className={`w-full h-full flex items-center justify-center font-bold text-xs ${color} ${bg}`}>
-    {typeof val === 'number' ? fmt(val) : val}
-    {suffix}
-  </div>
-);
-
-const InputCell = React.memo(({ id, val, onChange, onBlur, className = '', disabled = false }: any) => (
-  <input
-    id={id}
-    type="text"
-    autoComplete="off"
-    value={val ?? ''}
-    onChange={e => onChange(e.target.value)}
-    onBlur={onBlur}
-    onKeyDown={(e) => handleKeyDown(e, id)}
-    disabled={disabled}
-    className={`w-full h-full text-center text-xs font-bold outline-none transition-all placeholder:text-slate-400 
-            ${disabled
-        ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
-        : 'bg-yellow-50/80 dark:bg-yellow-900/10 text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500'
-      } ${className}`}
-  />
-));
-
-const TH = ({ children, className = '', colSpan = 1, rowSpan = 1 }: any) => (
-  <th
-    colSpan={colSpan}
-    rowSpan={rowSpan}
-    className={`border border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black uppercase text-[10px] p-2 text-center ${className}`}
-  >
-    {children}
-  </th>
-);
-const TD = ({ children, className = '', colSpan = 1, rowSpan = 1 }: any) => (
-  <td colSpan={colSpan} rowSpan={rowSpan} className={`border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs p-0 ${className}`}>
-    {children}
-  </td>
-);
-
-const DailySummary: React.FC<Props> = ({ allData, date, breakdownCategories = [], onUpdate }) => {
+// ============================================================================
+// 1. 🧠 DATA & STATE MANAGEMENT 
+// ============================================================================
+const DailySummary: React.FC<Props> = ({ allData, date, breakdownCategories = [], onUpdate, loadDataForRange, readOnly }) => {
   const [subTab, setSubTab] = useState<'DAILY' | 'BREAKDOWNS' | 'MONTHLY'>('DAILY');
   const [selDate, setSelDate] = useState(date);
   const [includePreform, setIncludePreform] = useState(false);
 
-  const [att1, setAtt1] = useState(INITIAL_ATT);
-  const [att2, setAtt2] = useState(INITIAL_ATT);
-  const [stock, setStock] = useState(INITIAL_STOCK);
-  const [reg, setReg] = useState(INITIAL_REG);
-  const [del, setDel] = useState(INITIAL_DEL);
+  const [att1, setAtt1] = useState(getInitAtt());
+  const [att2, setAtt2] = useState(getInitAtt());
+  const [stock, setStock] = useState(getInitStock());
+  const [reg, setReg] = useState(getInitReg());
+  const [del, setDel] = useState(getInitDel());
 
   const reportKey = `${selDate}_REPORT`;
 
+  // 🟢 1. RANGE DATA LOAD
   useEffect(() => {
-    const savedData = allData[reportKey];
-    if (savedData) {
-      setAtt1(savedData.att1 || INITIAL_ATT);
-      setAtt2(savedData.att2 || INITIAL_ATT);
-      setStock(savedData.stock || INITIAL_STOCK);
-      setReg(savedData.reg || INITIAL_REG);
-      setDel(savedData.del || INITIAL_DEL);
-    } else {
-      setAtt1(INITIAL_ATT);
-      setAtt2(INITIAL_ATT);
-      setStock(INITIAL_STOCK);
-      setReg(INITIAL_REG);
-      setDel(INITIAL_DEL);
-    }
-  }, [selDate, allData, reportKey]);
+      if (loadDataForRange) {
+          const [y, m] = selDate.split('-');
+          const start = `${y}-${m}-01`;
+          const endDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+          const end = `${y}-${m}-${String(endDay).padStart(2, '0')}`;
+          loadDataForRange(start, end);
+      }
+  }, [selDate, loadDataForRange]);
 
-  // Stock Calculations
-  const calculatedStock = useMemo(() => {
-    const [y, m] = selDate.split('-');
-    const day1 = `${y}-${m}-01`;
-    const isDay1 = selDate === day1;
-    const reportKeyDay1 = `${day1}_REPORT`;
+  // 🟢 2. SMART AUTO-SAVE (Distributed Overwrite-Proof System)
+  const lastSavedString = useRef<string>('');
+  const prevLocalData = useRef<any>({}); 
+  const latestAllDataRef = useRef(allData);
 
-    const calcs: any = {};
-    STOCK_KEYS.forEach(k => {
-      let open = 0;
-      if (isDay1) {
-        open = Number(stock[k as keyof typeof stock]?.o) || 0;
-      } else {
-        open = Number(allData[reportKeyDay1]?.stock?.[k]?.o) || 0;
+  // හැමවිටම අලුත්ම (Freshest) Database දත්ත Ref එකක තබා ගැනීම
+  useEffect(() => {
+      latestAllDataRef.current = allData;
+  }, [allData]);
+
+  useEffect(() => {
+      const monthPrefix = selDate.substring(0, 7);
+      const isDataLoaded = Object.keys(allData).some(k => k.startsWith(monthPrefix));
+      
+      if (!isDataLoaded) return; 
+
+      const currentData = { att1, att2, stock, reg, del };
+      const currentStr = JSON.stringify({ id: reportKey, date: selDate, ...currentData });
+
+      if (currentStr === lastSavedString.current) {
+          prevLocalData.current = currentData;
+          return;
       }
 
-      const dates = getDatesInRange(day1, selDate);
-      let mtdR = 0;
-      let mtdI = 0;
+      const savedData = allData[reportKey];
+      if (savedData) {
+          const fbStr = JSON.stringify({ id: reportKey, date: selDate, att1: savedData.att1 || getInitAtt(), att2: savedData.att2 || getInitAtt(), stock: savedData.stock || getInitStock(), reg: savedData.reg || getInitReg(), del: savedData.del || getInitDel() });
+          if (currentStr === fbStr) {
+              prevLocalData.current = currentData;
+              return; 
+          }
+      }
 
-      dates.forEach(d => {
-        const sData = (d === selDate) ? stock : allData[`${d}_REPORT`]?.stock;
-        if (sData && sData[k]) {
-          mtdR += Number(sData[k].r || 0);
-          mtdI += Number(sData[k].i || 0);
-        }
+      // 🟢 මේ User වෙනස් කළේ මොන කොටසදැයි (Section) හරියටම සොයාගැනීම
+      const changedKeys: string[] = [];
+      ['att1', 'att2', 'stock', 'reg', 'del'].forEach(k => {
+          if (JSON.stringify(prevLocalData.current[k]) !== JSON.stringify(currentData[k as keyof typeof currentData])) {
+              changedKeys.push(k);
+          }
       });
 
-      const closing = (open + mtdR) - mtdI;
-      calcs[k] = { o: open, rt: mtdR, it: mtdI, s: closing };
-    });
-    return { isDay1, calcs };
-  }, [allData, stock, selDate]);
+      const saveTimer = setTimeout(() => {
+          // 🟢 Database එකේ තියෙන අලුත්ම දත්ත (Latest Data) අරගෙන, ඒකට මේ User වෙනස් කළ කොටස පමණක් එකතු කිරීම
+          const latestDbData = latestAllDataRef.current[reportKey] || {};
+          const payloadToSave: any = { 
+              att1: getInitAtt(), att2: getInitAtt(), stock: getInitStock(), reg: getInitReg(), del: getInitDel(),
+              ...latestDbData, 
+              id: reportKey, date: selDate 
+          };
+
+          changedKeys.forEach(k => {
+              payloadToSave[k] = currentData[k as keyof typeof currentData];
+          });
+
+          lastSavedString.current = JSON.stringify(payloadToSave);
+          prevLocalData.current = currentData;
+
+          if (onUpdate && changedKeys.length > 0) {
+              onUpdate(reportKey, payloadToSave);
+          }
+      }, 800);
+
+      return () => clearTimeout(saveTimer);
+  }, [att1, att2, stock, reg, del, reportKey, selDate, allData, onUpdate]);
+
+
+  
+
+  const persistData = useCallback(() => {}, []);
+
+  // 🟢 3. දින මාරු කිරීමේදී දත්ත ආරක්ෂා කිරීම
+  const handleDateChange = useCallback((newDate: string) => {
+      if (onUpdate) onUpdate(reportKey, { id: reportKey, date: selDate, att1, att2, stock, reg, del });
+      setSelDate(newDate);
+  }, [reportKey, selDate, att1, att2, stock, reg, del, onUpdate]);
+
+  // 🟢 4. Firebase දත්ත පැමිණි විට පෝරමය යාවත්කාලීන කිරීම (Production දත්ත මඟින් මැකී යාම වැළැක්වීම)
+  const lastDbSyncData = useRef<string | null>(null);
 
   useEffect(() => {
-    let hasChanges = false;
-    const newStock = JSON.parse(JSON.stringify(stock));
-    STOCK_KEYS.forEach(k => {
-      const c = calculatedStock.calcs[k];
-      if (newStock[k].rt != c.rt) { newStock[k].rt = c.rt; hasChanges = true; }
-      if (newStock[k].it != c.it) { newStock[k].it = c.it; hasChanges = true; }
-      if (newStock[k].s != c.s) { newStock[k].s = c.s; hasChanges = true; }
-      if (!calculatedStock.isDay1 && newStock[k].o != c.o) { newStock[k].o = c.o; hasChanges = true; }
-    });
-    if (hasChanges) setStock(newStock);
-  }, [calculatedStock]);
-
-  const persistData = useCallback(() => {
-    if (onUpdate) {
-      onUpdate(reportKey, { id: reportKey, date: selDate, att1, att2, stock, reg, del });
+    const savedData = allData[reportKey];
+    
+    if (savedData) {
+        const currentDbString = JSON.stringify(savedData);
+        
+        // 🟢 වෙනත් කෙනෙක් Production දත්ත දැමූ විට මේ පෝරමය Reset වීම වැළැක්වීමට,
+        // Daily Report එකේ දත්ත ඇත්තටම වෙනස් වී ඇත්නම් පමණක් Local State එක Update කරන්න.
+        if (currentDbString !== lastDbSyncData.current) {
+            setAtt1(prev => JSON.stringify(prev) !== JSON.stringify(savedData.att1) ? savedData.att1 : prev);
+            setAtt2(prev => JSON.stringify(prev) !== JSON.stringify(savedData.att2) ? savedData.att2 : prev);
+            setStock(prev => JSON.stringify(prev) !== JSON.stringify(savedData.stock) ? savedData.stock : prev);
+            setReg(prev => JSON.stringify(prev) !== JSON.stringify(savedData.reg) ? savedData.reg : prev);
+            setDel(prev => JSON.stringify(prev) !== JSON.stringify(savedData.del) ? savedData.del : prev);
+            
+            lastDbSyncData.current = currentDbString;
+        }
+    } else {
+        if (lastDbSyncData.current !== 'EMPTY') {
+            setAtt1(getInitAtt()); 
+            setAtt2(getInitAtt()); 
+            setStock(getInitStock()); 
+            setReg(getInitReg()); 
+            setDel(getInitDel());
+            lastDbSyncData.current = 'EMPTY';
+        }
     }
-  }, [att1, att2, stock, reg, del, onUpdate, reportKey, selDate]);
+  }, [allData, reportKey]);
+  
 
-  // --- CORE DATA LOGIC ---
+  // ============================================================================
+  // 5. 🟢 PLANNING DOWNTIME & METRICS CALCULATION 
+  // ============================================================================
+  const getAdjustedMetrics = useCallback((row: any) => {
+    const m = calculateMetrics(row);
+    let planningMins = 0;
+    let actualBdMins = 0;
+
+    (row.breakdowns || []).forEach((bd: any) => {
+        if (bd.startTime && bd.endTime && bd.category) {
+            const [sh, sm] = bd.startTime.split(':').map(Number);
+            const [eh, em] = bd.endTime.split(':').map(Number);
+            let mins = (eh * 60 + em) - (sh * 60 + sm);
+            if (mins < 0) mins += 1440;
+            if (mins > 0) {
+                if (bd.category.toLowerCase().includes('planning')) planningMins += mins;
+                else actualBdMins += mins;
+            }
+        }
+    });
+
+    const ratePerMin = ((row.qtyPerHour || 0) * (row.cavities || 1)) / 60;
+    const planningLossQty = Math.floor(ratePerMin * planningMins);
+    const actualBdLossQty = Math.floor(ratePerMin * actualBdMins);
+
+    m.planQty = Math.max(0, (m.planQty || 0) - planningLossQty);
+    m.planKg = Number(((m.planQty * (row.unitWeight || 0)) / 1000).toFixed(2));
+
+    const updatedTotalLoss = m.planQty - (row.achievedQty || 0);
+    m.efficiencyLossQty = updatedTotalLoss - actualBdLossQty;
+    m.efficiencyLossKg = Number(((m.efficiencyLossQty * (row.unitWeight || 0)) / 1000).toFixed(2));
+
+    m.lostQty = updatedTotalLoss;
+    m.lostKg = Number(((updatedTotalLoss * (row.unitWeight || 0)) / 1000).toFixed(2));
+    m.bdLostQty = actualBdLossQty;
+    m.bdLostKg = Number(((actualBdLossQty * (row.unitWeight || 0)) / 1000).toFixed(2));
+    m.bdMins = actualBdMins;
+
+    return m;
+  }, []);
+
+  // ============================================================================
+  // 6. 📊 CORE SUMMARY DATA LOGIC
+  // ============================================================================
   const data = useMemo(() => {
-    const getProductType = (row: any) => {
-      if (row.productType) return row.productType;
-      const adminItems = allData.adminConfig?.productionItems || [];
-      const found = adminItems.find((i: any) => i.itemName === row.product && i.type === 'IM');
-      return found ? found.productType : 'Preform';
-    };
-
-    const getData = (type: 'IM' | 'BM') => {
-      let rows = allData[`${selDate}_${type}`]?.rows || [];
-      if (type === 'IM' && !includePreform) {
-        rows = rows.filter((r: any) => getProductType(r) === 'Cap');
-      }
-      return rows;
-    };
+    const getProductType = (row: any) => row.productType || ''; 
 
     const filterRows = (rows: any[], type: 'IM' | 'BM') => {
       let out = rows || [];
       if (type === 'IM' && !includePreform) {
-        out = out.filter((r: any) => getProductType(r) === 'Cap');
+          out = out.filter((r: any) => {
+              const pType = getProductType(r).toLowerCase();
+              const pName = (r.product || '').toLowerCase();
+              return pType.includes('cap') || pName.includes('cap');
+          });
       }
       return out;
     };
-
-    const imRows = getData('IM');
-    const bmRows = getData('BM');
+    
+    const bmRows = filterRows(allData[`${selDate}_BM`]?.rows || [], 'BM');
+    const imRows = filterRows(allData[`${selDate}_IM`]?.rows || [], 'IM');
 
     const bmD = allData[`${selDate}_BM`];
     const imD = allData[`${selDate}_IM`];
@@ -195,7 +226,7 @@ const DailySummary: React.FC<Props> = ({ allData, date, breakdownCategories = []
     const calc = (rows: any[], shift?: string) => {
       const f = shift ? rows.filter((r: any) => r.shift === shift) : rows;
       const res = f.reduce((acc, row) => {
-        const m = calculateMetrics(row);
+        const m = getAdjustedMetrics(row); 
         return { p: acc.p + m.planKg, a: acc.a + m.achievedKg, l: acc.l + m.lostKg };
       }, { p: 0, a: 0, l: 0 });
       return { ...res, pct: res.p > 0 ? (res.a / res.p) * 100 : 0 };
@@ -206,328 +237,170 @@ const DailySummary: React.FC<Props> = ({ allData, date, breakdownCategories = []
 
     const getMTD = (type: string) => {
       const monthPrefix = selDate.substring(0, 7);
+      const datesInRange = getDatesInRange(`${monthPrefix}-01`, selDate);
       let p = 0, a = 0, l = 0;
-      Object.values(allData).forEach((d: any) => {
-        if (d?.date?.startsWith(monthPrefix) && d.date <= selDate && d.machineType === type) {
-          let rows = d.rows || [];
-          if (type === 'IM' && !includePreform) {
-            rows = rows.filter((r: any) => getProductType(r) === 'Cap');
-          }
-          rows.forEach((r: any) => { const m = calculateMetrics(r); p += m.planKg; a += m.achievedKg; l += m.lostKg; });
+
+      datesInRange.forEach(d => {
+        const dayDoc = allData[`${d}_${type}`];
+        if (dayDoc && dayDoc.rows) {
+          const rows = filterRows(dayDoc.rows, type as 'IM' | 'BM');
+          rows.forEach((r: any) => { 
+              const m = getAdjustedMetrics(r); 
+              p += m.planKg; a += m.achievedKg; l += m.lostKg; 
+          });
         }
       });
       return { p, a, l, pct: p > 0 ? (a / p) * 100 : 0 };
     };
 
     const bM = getMTD('BM'); const iM = getMTD('IM');
-
     const gT = { p: bT.p + iT.p, a: bT.a + iT.a, l: bT.l + iT.l, pct: (bT.p + iT.p) > 0 ? ((bT.a + iT.a) / (bT.p + iT.p)) * 100 : 0 };
     const gM = { p: bM.p + iM.p, a: bM.a + iM.a, l: bM.l + iM.l, pct: (bM.p + iM.p) > 0 ? ((bM.a + iM.a) / (bM.p + iM.p)) * 100 : 0 };
 
     const calculateTeamStats = (teamName: string) => {
       const monthPrefix = selDate.substring(0, 7);
       let plan = 0, achv = 0;
-
       getDatesInRange(`${monthPrefix}-01`, selDate).forEach(d => {
-        const supKey = `${d}_SUPERVISORS`;
-        const supData = allData[supKey] || { day: 'Shift-A', night: 'Shift-B' }; 
-
+        const supData = allData[`${d}_SUPERVISORS`] || { day: 'Shift-A', night: 'Shift-B' }; 
         (['IM', 'BM'] as const).forEach(type => {
-          const rows = filterRows(allData[`${d}_${type}`]?.rows || [], type);
-
-          rows.forEach((r: any) => {
-            const m = calculateMetrics(r);
-            const rowSup = r.shift === 'day' ? supData.day : supData.night;
-
-            if (rowSup === teamName) {
-              plan += m.planKg;
-              achv += m.achievedKg;
-            }
+          filterRows(allData[`${d}_${type}`]?.rows || [], type).forEach((r: any) => {
+            const m = getAdjustedMetrics(r);
+            if ((r.shift === 'day' ? supData.day : supData.night) === teamName) { plan += m.planKg; achv += m.achievedKg; }
           });
         });
       });
-
       return { p: plan, a: achv, pct: plan > 0 ? (achv / plan) * 100 : 0 };
     };
-
-    const shiftA_MTD = calculateTeamStats('Shift-A');
-    const shiftB_MTD = calculateTeamStats('Shift-B');
 
     return {
       bm: { d: bD, n: bN, t: bT, m: bM },
       im: { d: iD, n: iN, t: iT, m: iM },
       grand: { t: gT, m: gM },
       shift: {
-        a: { p: shiftA_MTD.p, a: shiftA_MTD.a, pct: shiftA_MTD.pct },
-        b: { p: shiftB_MTD.p, a: shiftB_MTD.a, pct: shiftB_MTD.pct },
-        as: bmD?.daySupervisor || imD?.daySupervisor || '-',
-        bs: bmD?.nightSupervisor || imD?.nightSupervisor || '-'
+        a: calculateTeamStats('Shift-A'), b: calculateTeamStats('Shift-B'),
+        as: bmD?.daySupervisor || imD?.daySupervisor || '-', bs: bmD?.nightSupervisor || imD?.nightSupervisor || '-'
       }
     };
-  }, [allData, selDate, includePreform]);
+  }, [allData, selDate, includePreform, getAdjustedMetrics]);
 
-  // --- REGISTER GRAND TOTAL AUTO CALC ---
-  const regTotals = useMemo(() => {
-    const sum = (v1: string, v2: string) => (parseFloat(v1 || '0') + parseFloat(v2 || '0')).toString();
-    return {
-      d_GT: sum(reg.dIM_t, reg.dBM_t),
-      n_GT: sum(reg.nIM_t, reg.nBM_t),
-      t_GT: sum(reg.tIM_t, reg.tBM_t)
-    };
-  }, [reg]);
+  // ============================================================================
+  // 7. AUTO CALCULATIONS (State Updates Only - Auto-Save is handled centrally)
+  // ============================================================================
+  const calculatedStock = useMemo(() => {
+    const day1 = `${selDate.substring(0, 7)}-01`;
+    const isDay1 = selDate === day1;
+    const calcs: any = {};
+    STOCK_KEYS.forEach(k => {
+      const open = isDay1 ? (Number(stock[k as keyof typeof stock]?.o) || 0) : (Number(allData[`${day1}_REPORT`]?.stock?.[k]?.o) || 0);
+      let mtdR = 0, mtdI = 0;
+      getDatesInRange(day1, selDate).forEach(d => {
+        const sData = (d === selDate) ? stock : allData[`${d}_REPORT`]?.stock;
+        if (sData && sData[k]) { mtdR += Number(sData[k].r || 0); mtdI += Number(sData[k].i || 0); }
+      });
+      calcs[k] = { o: open, rt: mtdR, it: mtdI, s: (open + mtdR) - mtdI };
+    });
+    return { isDay1, calcs };
+  }, [allData, stock, selDate]);
 
   useEffect(() => {
-    if (reg.d_GT !== regTotals.d_GT || reg.n_GT !== regTotals.n_GT || reg.t_GT !== regTotals.t_GT) {
-      setReg(prev => ({ ...prev, d_GT: regTotals.d_GT, n_GT: regTotals.n_GT, t_GT: regTotals.t_GT }));
-    }
-  }, [regTotals]);
+    setStock(prevStock => {
+      let hasChanges = false;
+      const newStock = JSON.parse(JSON.stringify(prevStock));
+      STOCK_KEYS.forEach(k => {
+        const c = calculatedStock.calcs[k];
+        if (Number(newStock[k].rt) !== Number(c.rt)) { newStock[k].rt = c.rt; hasChanges = true; }
+        if (Number(newStock[k].it) !== Number(c.it)) { newStock[k].it = c.it; hasChanges = true; }
+        if (Number(newStock[k].s) !== Number(c.s)) { newStock[k].s = c.s; hasChanges = true; }
+        if (!calculatedStock.isDay1 && Number(newStock[k].o) !== Number(c.o)) { newStock[k].o = c.o; hasChanges = true; }
+      });
+      return hasChanges ? newStock : prevStock;
+    });
+  }, [calculatedStock]);
+  
+  const regTotals = useMemo(() => ({
+    d_GT: (parseFloat(reg.dIM_t || '0') + parseFloat(reg.dBM_t || '0')).toString(),
+    n_GT: (parseFloat(reg.nIM_t || '0') + parseFloat(reg.nBM_t || '0')).toString(),
+    t_GT: (parseFloat(reg.tIM_t || '0') + parseFloat(reg.tBM_t || '0')).toString()
+  }), [reg.dIM_t, reg.dBM_t, reg.nIM_t, reg.nBM_t, reg.tIM_t, reg.tBM_t]);
 
-  // --- BUTTON HANDLER ---
-  const handleExport = () => {
-    // Call the external function with all current state
-    downloadDailyReportExcel(selDate, data, att1, att2, stock, reg, del, regTotals);
+  useEffect(() => {
+    setReg(prev => {
+      if (prev.d_GT !== regTotals.d_GT || prev.n_GT !== regTotals.n_GT || prev.t_GT !== regTotals.t_GT) {
+        return { ...prev, d_GT: regTotals.d_GT, n_GT: regTotals.n_GT, t_GT: regTotals.t_GT };
+      }
+      return prev;
+    });
+  }, [regTotals]); 
+
+  const delTotals = useMemo(() => ({
+    totA: (parseFloat(del.imA || '0') + parseFloat(del.bmA || '0')).toFixed(1),
+    totM: (parseFloat(del.imM || '0') + parseFloat(del.bmM || '0')).toFixed(1)
+  }), [del.imA, del.bmA, del.imM, del.bmM]);
+
+  useEffect(() => {
+    setDel(prev => {
+      if (prev.totA !== delTotals.totA || prev.totM !== delTotals.totM) {
+        return { ...prev, totA: delTotals.totA, totM: delTotals.totM };
+      }
+      return prev;
+    });
+  }, [delTotals]); 
+
+
+
+  
+ // 🟢 4.1 Attendance Totals සහ Balance Auto-Calculate කිරීම
+ useEffect(() => {
+  const calcTotals = (prev: any) => {
+    const keys = ['general', 'cnNight', 'shiftA', 'shiftB', 'training', 'new'];
+    let tA = 0, tP = 0, tAb = 0;
+    
+    keys.forEach(k => {
+      tA += Number(prev[k]?.a || 0);
+      tP += Number(prev[k]?.p || 0);
+      tAb += Number(prev[k]?.ab || 0);
+    });
+
+    const newTotA = tA === 0 ? '' : tA.toString();
+    const newTotP = tP === 0 ? '' : tP.toString();
+    const newTotAb = tAb === 0 ? '' : tAb.toString();
+    
+    const newBal = (Number(prev.req?.a || 0) - tA).toString();
+
+    if (prev.total?.a !== newTotA || prev.total?.p !== newTotP || prev.total?.ab !== newTotAb || prev.balance?.a !== newBal) {
+      return { 
+        ...prev, 
+        total: { a: newTotA, p: newTotP, ab: newTotAb }, 
+        balance: { ...prev.balance, a: newBal } 
+      };
+    }
+    return prev;
   };
 
+  setAtt1(prev => calcTotals(prev));
+  setAtt2(prev => calcTotals(prev));
+}, [JSON.stringify(att1), JSON.stringify(att2)]);
+
+
+
+
+
   return (
-    <div className="space-y-8 pb-20 animate-fade-in relative w-full">
-      <div className="flex justify-center mb-4">
-        <div className="flex bg-white dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          {['DAILY', 'BREAKDOWNS', 'MONTHLY'].map(t => (
-            <button
-              key={t}
-              onClick={() => setSubTab(t as any)}
-              className={`px-8 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${subTab === t ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {subTab === 'DAILY' && (
-        <div className="max-w-7xl mx-auto px-4">
-          <form className="space-y-8" onSubmit={e => e.preventDefault()}>
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-md border border-slate-400 dark:border-slate-700">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900 px-5 py-2.5 rounded-2xl border border-slate-400 dark:border-slate-700">
-                  <Calendar className="w-5 h-5 text-indigo-500" />
-                  <input
-                    type="date"
-                    value={selDate}
-                    onChange={e => setSelDate(e.target.value)}
-                    className="bg-transparent font-black text-slate-700 dark:text-white outline-none uppercase text-sm dark:[color-scheme:dark]"
-                  />
-                </div>
-
-                <label className="flex items-center gap-3 cursor-pointer group select-none">
-                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${includePreform ? 'bg-indigo-600 border-indigo-600' : 'border-slate-400 dark:border-slate-500 group-hover:border-indigo-400'}`}>
-                    {includePreform && <CheckSquare className="w-3.5 h-3.5 text-white" />}
-                  </div>
-                  <input type="checkbox" checked={includePreform} onChange={e => setIncludePreform(e.target.checked)} className="hidden" />
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">With Preform</span>
-                </label>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleExport}
-                className="flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-500/20 transition-all hover:-translate-y-1"
-              >
-                <FileDown className="w-4 h-4" /> Export Report
-              </button>
-            </div>
-
-            <div className="grid grid-cols-12 gap-6">
-              <div className="col-span-12 xl:col-span-5 space-y-6">
-                {/* PRODUCTION */}
-                <div className="rounded-lg shadow-sm overflow-hidden border border-slate-400 dark:border-slate-600">
-                  <div className="bg-slate-100 dark:bg-slate-800 p-2 text-center font-black text-slate-700 dark:text-slate-200 uppercase text-xs border-b border-slate-400 dark:border-slate-600">Daily Production Summary</div>
-                  <table className="w-full border-collapse">
-                    <thead><tr><TH>Type</TH><TH>Planned</TH><TH>Achieve</TH><TH>Loss</TH><TH>%</TH></tr></thead>
-                    <tbody>
-                      {[
-                        { l: 'BM Line', h: true },
-                        { l: 'Day', d: data.bm.d },
-                        { l: 'Night', d: data.bm.n },
-                        { l: 'Total', d: data.bm.t },
-                        { l: 'MTD', d: data.bm.m },
-                        { l: 'IM Line', h: true },
-                        { l: 'Day', d: data.im.d },
-                        { l: 'Night', d: data.im.n },
-                        { l: 'Total', d: data.im.t },
-                        { l: 'MTD', d: data.im.m },
-                        { l: 'IM+BM\nTotal', d: data.grand.t, b: true },
-                        { l: 'IM+BM\nMTD', d: data.grand.m, b: true }
-                      ].map((r: any, i) => (
-                        <tr key={i}>
-                          {r.h ? <TD colSpan={5} className="font-bold text-center bg-slate-50 dark:bg-slate-800/50 p-1 text-indigo-600 dark:text-indigo-400">{r.l}</TD> : (
-                            <>
-                              <TD className={`text-center font-bold p-1.5 ${r.b ? 'whitespace-pre-line text-emerald-600 dark:text-emerald-400' : ''}`}>{r.l}</TD>
-                              <TD className="text-center"><ReadOnlyCell val={r.d.p.toFixed(1)} /></TD>
-                              <TD className="text-center"><ReadOnlyCell val={r.d.a.toFixed(1)} /></TD>
-                              <TD className="text-center"><ReadOnlyCell val={r.d.l.toFixed(1)} color="text-rose-500" /></TD>
-                              <TD className="text-center"><ReadOnlyCell val={r.d.pct.toFixed(0)} suffix="%" /></TD>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* SHIFT STATUS */}
-                <div className="rounded-lg shadow-sm overflow-hidden border border-slate-400 dark:border-slate-600">
-                  <table className="w-full border-collapse">
-                    <thead><tr><TH className="w-32">Shift</TH><TH colSpan={2}>Plan Vs Achievement</TH><TH className="w-20">MTD %</TH></tr></thead>
-                    <tbody>
-                      {[{ n: 'Shift A', s: data.shift.as, d: data.shift.a }, { n: 'Shift B', s: data.shift.bs, d: data.shift.b }].map((r, i) => (
-                        <React.Fragment key={i}>
-                          <tr>
-                            <TD rowSpan={2} className="text-center font-bold p-2 bg-slate-50 dark:bg-slate-800">
-                              {r.n}<br /><span className="font-normal text-[9px] text-slate-500">{r.s}</span>
-                            </TD>
-                            <TD className="text-center font-bold w-24 p-1 text-slate-500">Plan</TD>
-                            <TD className="text-center"><ReadOnlyCell val={r.d.p.toFixed(1)} /></TD>
-                            <TD rowSpan={2} className="text-center font-black text-indigo-600 dark:text-indigo-400">
-                              <ReadOnlyCell val={r.d.pct.toFixed(0)} suffix="%" />
-                            </TD>
-                          </tr>
-                          <tr>
-                            <TD className="text-center font-bold p-1 text-slate-500 border-t border-slate-400 dark:border-slate-600">Achievement</TD>
-                            <TD className="text-center border-t border-slate-400 dark:border-slate-600"><ReadOnlyCell val={r.d.a.toFixed(1)} /></TD>
-                          </tr>
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* REGISTER */}
-                <div className="rounded-lg shadow-sm overflow-hidden border border-slate-400 dark:border-slate-600">
-                  <div className="bg-slate-100 dark:bg-slate-800 p-2 text-center font-black text-slate-700 dark:text-slate-200 uppercase text-xs border-b border-slate-400 dark:border-slate-600">Register</div>
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr><TH rowSpan={2} className="w-20">Shift</TH><TH rowSpan={2} className="w-16"></TH><TH rowSpan={2}>Related M/C</TH><TH colSpan={2}>Total M/C</TH></tr>
-                      <tr><TH className="w-12 text-[8px]">Each</TH><TH className="w-12 text-[8px]">Grand</TH></tr>
-                    </thead>
-                    <tbody>
-                      {['Day', 'Night', 'Today'].map((s, idx) => {
-                        const p = s === 'Day' ? 'd' : s === 'Night' ? 'n' : 't';
-                        const baseRow = idx * 2;
-                        const gtVal = idx === 0 ? regTotals.d_GT : idx === 1 ? regTotals.n_GT : regTotals.t_GT;
-                        return (
-                          <React.Fragment key={s}>
-                            <tr>
-                              <TD rowSpan={2} className="text-center font-bold p-2 text-sm bg-slate-50 dark:bg-slate-800">{s}</TD>
-                              <TD className="text-center font-bold p-1 text-[10px]">IM</TD>
-                              <TD className="p-0"><InputCell id={`reg-${baseRow}-0`} val={reg[`${p}IM_mc` as keyof typeof reg]} onChange={(v: string) => setReg({ ...reg, [`${p}IM_mc`]: v })} onBlur={persistData} /></TD>
-                              <TD className="p-0"><InputCell id={`reg-${baseRow}-1`} val={reg[`${p}IM_t` as keyof typeof reg]} onChange={(v: string) => setReg({ ...reg, [`${p}IM_t`]: v })} onBlur={persistData} /></TD>
-                              <TD rowSpan={2} className="p-0 border-l border-slate-400 dark:border-slate-600 bg-indigo-50/50 dark:bg-indigo-900/20">
-                                <ReadOnlyCell val={gtVal} color="text-indigo-700 dark:text-indigo-400 font-black" />
-                              </TD>
-                            </tr>
-                            <tr className="border-t border-black">
-                              <TD className="text-center font-bold p-1 text-[10px] border-t border-slate-400 dark:border-slate-600">BM</TD>
-                              <TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id={`reg-${baseRow + 1}-0`} val={reg[`${p}BM_mc` as keyof typeof reg]} onChange={(v: string) => setReg({ ...reg, [`${p}BM_mc`]: v })} onBlur={persistData} /></TD>
-                              <TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id={`reg-${baseRow + 1}-1`} val={reg[`${p}BM_t` as keyof typeof reg]} onChange={(v: string) => setReg({ ...reg, [`${p}BM_t`]: v })} onBlur={persistData} /></TD>
-                            </tr>
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-12 xl:col-span-7 space-y-6">
-                {/* ATTENDANCE */}
-                <div className="grid grid-cols-2 gap-4 bg-white dark:bg-slate-800 p-2 border border-slate-400 dark:border-slate-600 rounded-lg shadow-sm">
-                  <div className="col-span-2 text-center font-bold text-slate-700 dark:text-slate-200 uppercase text-lg border-b border-slate-400 dark:border-slate-600 mb-2 pb-1">Attendance</div>
-                  {[att1, att2].map((att, idx) => (
-                    <table key={idx} className="w-full border-collapse border border-slate-400 dark:border-slate-600">
-                      <thead><tr><TH className="text-left pl-2 bg-slate-50 dark:bg-slate-900 w-24"> </TH><TH>Act</TH><TH>Pre</TH><TH>Abs</TH></tr></thead>
-                      <tbody>
-                        {ATT_KEYS.map((k, rIdx) => (
-                          <tr key={k}>
-                            <TD className="font-bold pl-2 p-1 capitalize text-[10px] text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">{k.replace(/([A-Z])/g, ' $1').trim()}</TD>
-                            <TD className="p-0 w-12"><InputCell id={`att${idx}-${rIdx}-0`} val={att[k].a} onChange={v => (idx === 0 ? setAtt1 : setAtt2)({ ...att, [k]: { ...att[k], a: v } })} onBlur={persistData} /></TD>
-                            <TD className="p-0 w-12"><InputCell id={`att${idx}-${rIdx}-1`} val={att[k].p} onChange={v => (idx === 0 ? setAtt1 : setAtt2)({ ...att, [k]: { ...att[k], p: v } })} onBlur={persistData} /></TD>
-                            <TD className="p-0 w-12"><InputCell id={`att${idx}-${rIdx}-2`} val={att[k].ab} onChange={v => (idx === 0 ? setAtt1 : setAtt2)({ ...att, [k]: { ...att[k], ab: v } })} onBlur={persistData} className="text-rose-600 dark:text-rose-400 bg-rose-50/30 dark:bg-rose-900/10" /></TD>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ))}
-                </div>
-
-                {/* STOCK */}
-                <div className="rounded-lg shadow-sm overflow-hidden border border-slate-400 dark:border-slate-600">
-                  <div className="bg-slate-100 dark:bg-slate-800 p-2 text-center font-black text-slate-700 dark:text-slate-200 uppercase text-xs border-b border-slate-400 dark:border-slate-600">Preform Issues & Stock Details</div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr>
-                          <TH className="w-20">Item</TH>
-                          <TH className="w-24">Opn</TH>
-                          <TH className="w-24">Rvd</TH>
-                          <TH className="w-24">Tot (MTD)</TH>
-                          <TH className="w-24">Iss</TH>
-                          <TH className="w-24">IsT (MTD)</TH>
-                          <TH className="w-24">Stk</TH>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {STOCK_KEYS.map((k, rIdx) => {
-                          const c = calculatedStock.calcs[k];
-                          return (
-                            <tr key={k}>
-                              <TD className="font-bold text-center uppercase p-1 bg-slate-50 dark:bg-slate-900">{k}</TD>
-                              <TD className="p-0 h-8"><InputCell id={`stk-${rIdx}-0`} val={c.o} onChange={(v: string) => setStock({ ...stock, [k]: { ...stock[k as keyof typeof stock], o: v } })} onBlur={persistData} disabled={!calculatedStock.isDay1} className={!calculatedStock.isDay1 ? 'text-slate-500 bg-slate-100 dark:bg-slate-800' : ''} /></TD>
-                              <TD className="p-0 h-8"><InputCell id={`stk-${rIdx}-1`} val={stock[k as keyof typeof stock].r} onChange={(v: string) => setStock({ ...stock, [k]: { ...stock[k as keyof typeof stock], r: v } })} onBlur={persistData} /></TD>
-                              <TD className="p-0 h-8 bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"><ReadOnlyCell val={c.rt} color="text-indigo-700 dark:text-indigo-300" /></TD>
-                              <TD className="p-0 h-8"><InputCell id={`stk-${rIdx}-3`} val={stock[k as keyof typeof stock].i} onChange={(v: string) => setStock({ ...stock, [k]: { ...stock[k as keyof typeof stock], i: v } })} onBlur={persistData} /></TD>
-                              <TD className="p-0 h-8 bg-rose-50/50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400"><ReadOnlyCell val={c.it} color="text-rose-700 dark:text-rose-300" /></TD>
-                              <TD className="p-0 h-8 bg-emerald-50/50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-black border-l border-slate-400 dark:border-slate-600"><ReadOnlyCell val={c.s} color="text-emerald-700 dark:text-emerald-300" /></TD>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* DELIVERY */}
-                <div className="rounded-lg shadow-sm border border-slate-400 dark:border-slate-600 overflow-hidden bg-white dark:bg-slate-800">
-                  <div className="bg-slate-100 dark:bg-slate-800 p-2 text-center font-black text-slate-700 dark:text-slate-200 uppercase text-xs border-b border-slate-400 dark:border-slate-600">Delivery Details</div>
-                  <div className="p-2">
-                    <table className="w-full border-collapse">
-                      <thead><tr><TH></TH><TH>Actual</TH><TH>MTD</TH></tr></thead>
-                      <tbody>
-                        <tr><TD className="font-bold text-center p-1 bg-slate-50 dark:bg-slate-900">IM</TD><TD className="p-0"><InputCell id="del-0-0" val={del.imA} onChange={v => setDel({ ...del, imA: v })} onBlur={persistData} /></TD><TD className="p-0"><InputCell id="del-0-1" val={del.imM} onChange={v => setDel({ ...del, imM: v })} onBlur={persistData} /></TD></tr>
-                        <tr><TD className="font-bold text-center p-1 bg-slate-50 dark:bg-slate-900 border-t border-slate-400 dark:border-slate-600">BM</TD><TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id="del-1-0" val={del.bmA} onChange={v => setDel({ ...del, bmA: v })} onBlur={persistData} /></TD><TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id="del-1-1" val={del.bmM} onChange={v => setDel({ ...del, bmM: v })} onBlur={persistData} /></TD></tr>
-                        <tr><TD className="font-bold text-center p-1 bg-slate-50 dark:bg-slate-900 border-t border-slate-400 dark:border-slate-600">Total</TD><TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id="del-2-0" val={del.totA} onChange={v => setDel({ ...del, totA: v })} onBlur={persistData} /></TD><TD className="p-0 border-t border-slate-400 dark:border-slate-600"><InputCell id="del-2-1" val={del.totM} onChange={v => setDel({ ...del, totM: v })} onBlur={persistData} /></TD></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {subTab === 'BREAKDOWNS' && (
-        <div className="max-w-7xl mx-auto px-4">
-          <BreakdownSummary allData={allData} initialDate={selDate} />
-        </div>
-      )}
-
-      {subTab === 'MONTHLY' && (
-        <div className="w-full px-2">
-          <MonthlyProduction allData={allData} currentDate={selDate} breakdownCategories={breakdownCategories} />
-        </div>
-      )}
-    </div>
+    <DailySummaryView
+      readOnly={readOnly}
+      subTab={subTab} setSubTab={setSubTab}
+      selDate={selDate} setSelDate={handleDateChange} 
+      includePreform={includePreform} setIncludePreform={setIncludePreform}
+      data={data}
+      att1={att1} setAtt1={setAtt1} att2={att2} setAtt2={setAtt2}
+      stock={stock} setStock={setStock}
+      reg={reg} setReg={setReg} del={del} setDel={setDel}
+      calculatedStock={calculatedStock} regTotals={regTotals}
+      handleExport={() => downloadDailyReportExcel(selDate, data, att1, att2, stock, reg, del, regTotals)}
+      persistData={persistData}
+      allData={allData} breakdownCategories={breakdownCategories}
+      loadDataForRange={loadDataForRange}
+    />
   );
 };
 

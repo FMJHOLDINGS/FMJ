@@ -1,11 +1,12 @@
-
 import { initializeApp } from "firebase/app";
 import { 
   initializeFirestore, 
   persistentLocalCache, 
   persistentMultipleTabManager 
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth"; 
 
+// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDd7hEcGiWBfikLEMB0Yz-7_Bjg8L_85ys",
   authDomain: "fmjpro.firebaseapp.com",
@@ -16,12 +17,21 @@ const firebaseConfig = {
   measurementId: "G-L05648FYR8"
 };
 
-// Initialize Firebase
+// 1. Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with Offline Persistence
+// 2. Initialize Firestore with Advanced Offline Caching
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
+    // බ්‍රව්සර් ටැබ් කිහිපයක එකවර Database එක භාවිතා කිරීමට ඉඩ ලබාදෙයි
+    tabManager: persistentMultipleTabManager(),
+    
+    // 🟢 අලුතින් එකතු කළා: 20MB උපරිම සීමාව (මෙයින් RAM සහ Storage එක පිරීම නවතී)
+    cacheSizeBytes: 20 * 1024 * 1024 
   })
 });
+
+// 3. Initialize Firebase Auth
+export const auth = getAuth(app);
+
+export default app;

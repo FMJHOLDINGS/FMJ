@@ -1,335 +1,283 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { doc, setDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { db } from '../firebase';
-import { AdminConfig, DayData } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { deleteField } from 'firebase/firestore'; // 🟢 Added for safe deletion
+import DataService from '../services/DataService';
+import { AdminConfig } from '../types';
+import { getDatesInRange } from '../utils';
 
-// ============================================================================
-// ⚙️ SYSTEM SETTINGS (මෙන්න ඔබ පාලනය කළ යුතු තැන්)
-// ============================================================================
+const DEFAULT_CONFIG: AdminConfig = { shiftTeams: ['Shift-A', 'Shift-B'], breakdownCategories: [], qaCategories: [] };
 
-// 1. DB VERSION: ඔබ DB Structure එක වෙනස් කරන හැම වෙලාවෙම මේ අංකය 1කින් වැඩි කරන්න.
-// එවිට සියලුම Devices වල පරණ Cache එක මැකී, අලුත් දත්ත Cloud එකෙන් එයි.
-const CURRENT_DB_VERSION = 1; 
 
-// 2. AUTO PURGE DAYS: දත්තයක් Delete කර දින කීයකට පසුද එය සදහටම මැකෙන්න ඕනේ?
-const DAYS_TO_KEEP_DELETED = 30; // දින 30ක් (ඔබට අවශ්‍ය නම් වෙනස් කරන්න)
 
-// ============================================================================
-
-const StorageEngine = {
-  // --- VERSION CONTROLLED MIGRATION ---
-  checkAndMigrate: () => {
-    try {
-      const storedVersion = parseInt(localStorage.getItem('fmj_db_version') || '0');
-
-      // Version එක වෙනස් නම් හෝ නැත්නම් -> Full Reset (Smart Fix)
-      if (storedVersion !== CURRENT_DB_VERSION) {
-        console.log(`System Update Detected! (v${storedVersion} -> v${CURRENT_DB_VERSION})`);
-        console.log('Cleaning up old local data to prevent conflicts...');
-        
-        // 1. Clear all FMJ data from Local Storage
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('fmj_')) {
-                localStorage.removeItem(key);
-            }
-        });
-
-        // 2. Set new version
-        localStorage.setItem('fmj_db_version', CURRENT_DB_VERSION.toString());
-        
-        // 3. Keep Cloud Sync Enabled Default
-        localStorage.setItem('fmj_cloud_enabled', 'true');
-        
-        return true; // Indicates a reset happened
-      }
-    } catch (e) { console.error("Migration Check Failed", e); }
-    return false;
-  },
-
-  loadMonth: (monthStr: string) => {
-    try {
-      const s = localStorage.getItem(`fmj_data_${monthStr}`);
-      return s ? JSON.parse(s) : {};
-    } catch { return {}; }
-  },
-
-  saveMonth: (monthStr: string, data: Record<string, any>) => {
-    try { 
-        localStorage.setItem(`fmj_data_${monthStr}`, JSON.stringify(data)); 
-    } 
-    catch (e) { console.error("Storage Full?", e); }
-  },
-
-  loadSettings: () => {
-    try {
-      const s = localStorage.getItem('fmj_settings');
-      return s ? JSON.parse(s) : { productionItems: [], breakdownCategories: [], shiftTeams: [] };
-    } catch { return { productionItems: [], breakdownCategories: [], shiftTeams: [] }; }
-  },
-
-  saveSettings: (config: AdminConfig) => {
-    localStorage.setItem('fmj_settings', JSON.stringify(config));
-  }
+// 🟢 Firebase හි ඇති Rows, UI එකට Array එකක් ලෙස සකස් කර දීම
+const parseRows = (rowsData: any) => {
+  if (!rowsData) return [];
+  
+  const rowsArray = Array.isArray(rowsData) ? rowsData : Object.values(rowsData);
+  
+  // 🟢 අර කලින් මැකීමට උත්සාහ කර සිරවී ඇති හිස් පේළි (Ghost Rows) ස්වයංක්‍රීයව UI එකෙන් ඉවත් කිරීම
+  return rowsArray.filter((row: any) => row !== null && typeof row === 'object' && row.id);
 };
 
-export type CloudStatus = 'syncing' | 'success' | 'error' | 'disabled';
 
-export const useProductionData = (selectedDate: string) => {
-  const currentMonthDocId = useMemo(() => selectedDate.substring(0, 7), [selectedDate]);
-  
-  const prevMonthDocId = useMemo(() => {
-    const d = new Date(selectedDate);
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().substring(0, 7);
-  }, [selectedDate]);
 
-  const [activeData, setActiveData] = useState<Record<string, any>>({});
-  const [adminConfig, setAdminConfig] = useState<AdminConfig>({ productionItems: [], breakdownCategories: [], shiftTeams: [] });
-  const [isCloudEnabled, setIsCloudEnabled] = useState(() => localStorage.getItem('fmj_cloud_enabled') !== 'false');
-  const [cloudStatus, setCloudStatus] = useState<CloudStatus>('syncing');
-  const [localStatus, setLocalStatus] = useState<CloudStatus>('success');
+export const useProductionData = (dateProp: string, collectionName: string) => {
+  const [combinedData, setCombinedData] = useState<Record<string, any>>({});
+  const [adminConfig, setAdminConfig] = useState<AdminConfig>(DEFAULT_CONFIG);
+
+  const [cloudStatus, setCloudStatus] = useState<'idle' | 'syncing' | 'error' | 'success'>('idle');
+  const [localStatus, setLocalStatus] = useState<'success' | 'error'>('success'); 
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  // Initial Load & Version Check
-  useEffect(() => {
-    // 1. Check Version & Wipe if needed
-    const wasReset = StorageEngine.checkAndMigrate();
-    
-    // 2. Load Settings
-    setAdminConfig(StorageEngine.loadSettings());
+  const listenersRef = useRef<Record<string, () => void>>({});
 
-    // 3. Load Active Data
-    const curr = StorageEngine.loadMonth(currentMonthDocId);
-    const prev = StorageEngine.loadMonth(prevMonthDocId);
-    
-    // Filter out deleted items for display
-    const cleanData: Record<string, any> = {};
-    const rawData = { ...prev, ...curr };
-    Object.keys(rawData).forEach(k => {
-        if (!rawData[k].deleted) {
-            cleanData[k] = rawData[k];
+  const loadedRangeRef = useRef<{start: string, end: string} | null>(null);
+
+  // 1. Load Admin Config 
+  useEffect(() => {
+    if (!collectionName) return;
+    return DataService.subscribeToConfig(collectionName, (data) => setAdminConfig(data || DEFAULT_CONFIG));
+  }, [collectionName]);
+
+
+
+  // 2. Load Daily Data & Monthly Summary
+  useEffect(() => {
+    if (!collectionName || !dateProp) return;
+
+    // 🟢 1. දිනපතා Production දත්ත Load කිරීම
+    const unsubscribeDaily = DataService.subscribeToProductionDay(collectionName, dateProp, (docData) => {
+      setCombinedData(prev => {
+        if (!docData) {
+          const newState = { ...prev };
+          delete newState[`${dateProp}_IM`];
+          delete newState[`${dateProp}_BM`];
+          delete newState[`${dateProp}_SUPERVISORS`];
+          return newState;
         }
+
+        const prevImDrafts = (prev[`${dateProp}_IM`]?.rows || []).filter((r: any) => !r.machine || !r.product);
+        const prevBmDrafts = (prev[`${dateProp}_BM`]?.rows || []).filter((r: any) => !r.machine || !r.product);
+
+        return {
+          ...prev,
+          [`${dateProp}_IM`]: docData.IM ? { ...docData.IM, rows: [...parseRows(docData.IM.rows), ...prevImDrafts] } : { rows: prevImDrafts }, 
+          [`${dateProp}_BM`]: docData.BM ? { ...docData.BM, rows: [...parseRows(docData.BM.rows), ...prevBmDrafts] } : { rows: prevBmDrafts }, 
+          [`${dateProp}_SUPERVISORS`]: docData.supervisors || {}
+        };
+      });
     });
 
-    setActiveData(cleanData);
-
-    // If reset happened, we might want to trigger a visual refresh or log
-    if(wasReset) console.log("Local database rebuilt successfully.");
-
-  }, [currentMonthDocId, prevMonthDocId]);
-
-  // --- SMART SYNC LOGIC + AUTO CLEANUP ---
-  const handleSmartSync = useCallback((snap: any, docType: 'settings' | 'data', targetMonthId?: string) => {
-      if (!snap.exists()) return;
-      const cloudEntries = snap.data().entries || {};
-      const cloudSyncTime = snap.data().last_sync;
-
-      if (docType === 'settings') {
-          setAdminConfig(currentConfig => {
-              const cloudTS = cloudEntries.adminConfig?.lastModified || 0;
-              const localTS = currentConfig.lastModified || 0;
-              
-              if (cloudTS > localTS) {
-                  StorageEngine.saveSettings(cloudEntries.adminConfig);
-                  return cloudEntries.adminConfig;
-              } else if (localTS > cloudTS) {
-                  const ref = doc(db, 'production_data', 'settings');
-                  updateDoc(ref, { [`entries.adminConfig`]: currentConfig, last_sync: new Date().toISOString() }).catch(() => {});
-              }
-              return currentConfig;
+    // 🟢 2. අලුත් ක්‍රමය: මාසයට අදාළ Summary Document එකට සවන් දීම
+    const monthStr = dateProp.substring(0, 7);
+    const unsubscribeSummary = DataService.subscribeToMonthlySummary(collectionName, monthStr, (summaryData) => {
+      if (summaryData) {
+        setCombinedData(prev => {
+          const newState = { ...prev };
+          // මාසයේ සියලුම දිනවල දත්ත අදාළ date_REPORT යටතේ update කිරීම
+          Object.keys(summaryData).forEach(dateKey => {
+            newState[`${dateKey}_REPORT`] = summaryData[dateKey];
           });
-      } else if (docType === 'data' && targetMonthId) {
-          setActiveData(current => {
-             const localMonthData = StorageEngine.loadMonth(targetMonthId);
-             let hasLocalChanges = false;
-             let hasAutoPurge = false;
-             const updatesPushToCloud: Record<string, any> = {};
-             const updatesDeleteFromCloud: Record<string, any> = {};
-             const mergedMonthData = { ...localMonthData };
-             const now = Date.now();
-             const PURGE_MS = DAYS_TO_KEEP_DELETED * 24 * 60 * 60 * 1000;
-
-             // 1. Process Cloud Data (The Source of Truth)
-             Object.keys(cloudEntries).forEach(key => {
-                 const cloudVal = cloudEntries[key];
-                 const localVal = localMonthData[key];
-                 
-                 // --- AUTO PURGE CHECK (Cloud side) ---
-                 if (cloudVal.deleted && (now - cloudVal.lastModified > PURGE_MS)) {
-                     delete mergedMonthData[key]; // Remove from local
-                     updatesDeleteFromCloud[`entries.${key}`] = deleteField(); // Remove from cloud
-                     hasLocalChanges = true;
-                     hasAutoPurge = true;
-                     return; 
-                 }
-
-                 const cloudTS = cloudVal.lastModified || 0;
-                 const localTS = localVal?.lastModified || 0;
-
-                 // Logic: Cloud Wins if newer OR if Local is missing/reset
-                 if (cloudTS > localTS) {
-                     mergedMonthData[key] = cloudVal;
-                     hasLocalChanges = true;
-                 } else if (localTS > cloudTS) {
-                     updatesPushToCloud[`entries.${key}`] = localVal;
-                 }
-             });
-
-             // 2. Identify Local Changes
-             Object.keys(localMonthData).forEach(key => {
-                 if (!cloudEntries[key]) {
-                     // Auto Purge Check (Local side)
-                     if (localMonthData[key].deleted && (now - localMonthData[key].lastModified > PURGE_MS)) {
-                         delete mergedMonthData[key];
-                         hasLocalChanges = true;
-                     } else {
-                         // Push to Cloud
-                         updatesPushToCloud[`entries.${key}`] = localMonthData[key];
-                     }
-                 }
-             });
-
-             // 3. Save to Local
-             if (hasLocalChanges) {
-                 StorageEngine.saveMonth(targetMonthId, mergedMonthData);
-             }
-
-             // 4. Push to Cloud
-             if (Object.keys(updatesPushToCloud).length > 0 && isCloudEnabled) {
-                 const ref = doc(db, 'production_data', targetMonthId);
-                 updateDoc(ref, { ...updatesPushToCloud, last_sync: new Date().toISOString() })
-                   .catch(async (e) => {
-                      if (e.code === 'not-found') {
-                          const initial: any = { entries: {}, last_sync: new Date().toISOString() };
-                          Object.keys(updatesPushToCloud).forEach(k => initial.entries[k.replace('entries.', '')] = updatesPushToCloud[k]);
-                          await setDoc(ref, initial, { merge: true });
-                      }
-                   });
-             }
-
-             // 5. Execute Auto Purge
-             if (hasAutoPurge && isCloudEnabled) {
-                 const ref = doc(db, 'production_data', targetMonthId);
-                 updateDoc(ref, updatesDeleteFromCloud).catch(e => console.error("Auto purge failed", e));
-             }
-
-             // 6. Update UI (Hide deleted items)
-             if (targetMonthId === currentMonthDocId || targetMonthId === prevMonthDocId) {
-                 setLocalStatus('success');
-                 if(cloudSyncTime) setLastSyncTime(new Date(cloudSyncTime).toLocaleString());
-                 setCloudStatus('success');
-                 
-                 const uiData: Record<string, any> = { ...current };
-                 Object.keys(mergedMonthData).forEach(k => {
-                     if (mergedMonthData[k].deleted) {
-                         delete uiData[k];
-                     } else {
-                         uiData[k] = mergedMonthData[k];
-                     }
-                 });
-                 return uiData;
-             }
-             return current;
-          });
+          return newState;
+        });
       }
-  }, [currentMonthDocId, prevMonthDocId, isCloudEnabled]);
+    });
 
-  useEffect(() => {
-    if (!isCloudEnabled) return;
-    return onSnapshot(doc(db, 'production_data', 'settings'), (snap) => handleSmartSync(snap, 'settings'));
-  }, [isCloudEnabled, handleSmartSync]);
+    return () => { unsubscribeDaily(); unsubscribeSummary(); };
+  }, [dateProp, collectionName]);
 
-  useEffect(() => {
-      if (!isCloudEnabled) { setCloudStatus('disabled'); return; }
-      setCloudStatus('syncing');
-      return onSnapshot(doc(db, 'production_data', currentMonthDocId), (snap) => handleSmartSync(snap, 'data', currentMonthDocId), () => setCloudStatus('error'));
-  }, [currentMonthDocId, isCloudEnabled, handleSmartSync]);
 
-  const saveSpecificKey = useCallback(async (key: string, data: any) => {
-      const dataWithTS = { ...data, lastModified: Date.now(), deleted: false };
-      
-      if (key === 'adminConfig') {
-          setAdminConfig(dataWithTS);
-          StorageEngine.saveSettings(dataWithTS);
+
+  // 3. Save Data (Smart Diffing - Prevent Overwrite)
+  const updateDayData = useCallback(async (arg1: string, arg2: any, arg3?: any) => {
+    if (!collectionName) return;
+
+    let date = '';
+    let type: 'IM' | 'BM' | 'supervisors' | 'REPORT' = 'IM';
+    let newData = null;
+
+    if (arg3 !== undefined) {
+       date = arg1;
+       type = arg2 === 'SUPERVISORS' ? 'supervisors' : arg2;
+       newData = arg3;
+    } else {
+       const parts = arg1.split('_'); 
+       date = parts[0]; 
+       const rawType = parts[1];
+       if(!date || !rawType) return; 
+       type = rawType === 'SUPERVISORS' ? 'supervisors' : rawType as any;
+       newData = arg2;
+    }
+
+    if (!newData) return;
+
+    const uiKey = `${date}_${type === 'supervisors' ? 'SUPERVISORS' : type}`;
+    
+    // 🟢 Optimistic Update & Smart Sync
+    setCombinedData(prev => {
+        const prevData = prev[uiKey];
+        const firestorePayload: any = { [type]: {} };
+        let hasChanges = false;
+
+        if (type === 'supervisors') {
+       firestorePayload[type] = newData;
+         hasChanges = true;
+
+        } else if (type === 'REPORT') {
+          // 🟢 අලුත් ක්‍රමය: මාසයට අදාළ වෙනම Document එකකට (උදා: 2026-04_SUMMARY) සුරක්ෂිතව සේව් කිරීම
+          const monthStr = date.substring(0, 7);
+          const mergedData = { ...(prevData || {}), ...newData };
+          
+          setCloudStatus('syncing');
+          DataService.saveSummaryData(collectionName, monthStr, date, mergedData)
+            .then(() => {
+                setCloudStatus('success');
+                setLastSyncTime(new Date().toISOString());
+            })
+            .catch(() => setCloudStatus('error'));
+
+          return { ...prev, [uiKey]: mergedData };
       } else {
-          setActiveData(prev => ({ ...prev, [key]: dataWithTS }));
-          const match = key.match(/^(\d{4}-\d{2})/);
-          const targetMonth = match ? match[1] : currentMonthDocId;
-          const currentMonthData = StorageEngine.loadMonth(targetMonth);
-          currentMonthData[key] = dataWithTS;
-          StorageEngine.saveMonth(targetMonth, currentMonthData);
-      }
-      
-      setLocalStatus('success');
-      
-      if (isCloudEnabled) {
-          try {
-            setCloudStatus('syncing');
-            const now = new Date().toISOString();
-            const targetDocId = key === 'adminConfig' ? 'settings' : (key.match(/^(\d{4}-\d{2})/) ? key.substring(0, 7) : currentMonthDocId);
-            const ref = doc(db, 'production_data', targetDocId);
-            const fieldKey = key === 'adminConfig' ? 'adminConfig' : key;
+
+
+
+            const oldRows = prevData?.rows || [];
+            const newRows = newData.rows || [];
             
-            await updateDoc(ref, { [`entries.${fieldKey}`]: dataWithTS, last_sync: now })
-                .catch(async (err) => { 
-                    if (err.code === 'not-found') await setDoc(ref, { entries: { [fieldKey]: dataWithTS }, last_sync: now }, { merge: true }); 
-                });
-            setCloudStatus('success');
-            setLastSyncTime(new Date(now).toLocaleString());
-          } catch (e) { console.error(e); setCloudStatus('error'); }
-      }
-  }, [isCloudEnabled, currentMonthDocId]);
+            const oldRowsMap = new Map(oldRows.map((r: any) => [r.id, r]));
+            const newRowsMap = new Map(newRows.map((r: any) => [r.id, r]));
 
-  const deleteSpecificKey = useCallback(async (key: string) => {
-      // Soft Delete: Mark as deleted
-      const tombstone = { deleted: true, lastModified: Date.now() };
+            firestorePayload[type].rows = {};
 
-      setActiveData(prev => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
+            // 🟢 1. දැනට තියෙන සියලුම පේළි අලුත් Map ආකෘතියට සකස් කිරීම
+            // (වෙනසක් වුණත් නැතත් සියලු පේළි යැවීමෙන් පරණ Array දත්ත, Map බවට ආරක්ෂිතව හැරවේ)
+            newRows.forEach((newRow: any) => {
+              if (newRow.machine && newRow.product) {
+                  firestorePayload[type].rows[newRow.id] = newRow;
+                  hasChanges = true;
+              }
+            });
+
+            // 🟢 2. මකා දැමූ පේළි සඳහා Firebase අණ (String ලෙස) ලබා දීම
+            oldRows.forEach((oldRow: any) => {
+                if (!newRowsMap.has(oldRow.id) && oldRow.machine && oldRow.product) {
+                    firestorePayload[type].rows[oldRow.id] = "__DELETE_FIELD__";
+                    hasChanges = true;
+                }
+            });
+          
+
+            // 3. Supervisor check
+            if (newData.daySupervisor !== prevData?.daySupervisor) {
+                firestorePayload[type].daySupervisor = newData.daySupervisor;
+                hasChanges = true;
+            }
+            if (newData.nightSupervisor !== prevData?.nightSupervisor) {
+                firestorePayload[type].nightSupervisor = newData.nightSupervisor;
+                hasChanges = true;
+            }
+        }
+
+        // වෙනසක් සිදුවී ඇත්නම් පමණක් Firebase වෙත යවයි
+        if (hasChanges) {
+            setCloudStatus('syncing');
+            DataService.saveSmartData(collectionName, date, firestorePayload)
+              .then(() => {
+                  setCloudStatus('success');
+                  setLastSyncTime(new Date().toISOString());
+              })
+              .catch(() => setCloudStatus('error'));
+        }
+
+        return { ...prev, [uiKey]: newData };
+    });
+    
+    setLocalStatus('success');
+  }, [collectionName]);
+
+  // 4. Save Admin Config 
+  const updateAdminConfig = useCallback(async (newConfig: AdminConfig) => {
+    setAdminConfig(newConfig);
+    if(collectionName) {
+      await DataService.saveConfig(collectionName, newConfig);
+    }
+  }, [collectionName]);
+
+
+  
+  
+
+// 5. Load Data For a Date Range (🟢 Cache Memory භාවිතය)
+const loadDataForRange = useCallback(async (startDate: string, endDate: string, forceRefresh = false) => {
+  if (!collectionName) return;
+
+  if (!forceRefresh && loadedRangeRef.current?.start === startDate && loadedRangeRef.current?.end === endDate) {
+      return; 
+  }
+
+  Object.values(listenersRef.current).forEach(unsub => unsub());
+  listenersRef.current = {};
+
+  try {
+      // 🟢 1. දින පරාසයට අදාළ Production දත්ත ගැනීම
+      const results = await DataService.getProductionDataForRange(collectionName, startDate, endDate);
+
+      // 🟢 2. අලුත් ක්‍රමය: දින පරාසයට අදාළ මාසවල Summary දත්ත ද එකවර ලබාගැනීම
+      const months = new Set<string>();
+      getDatesInRange(startDate, endDate).forEach(d => months.add(d.substring(0, 7)));
+      
+      const summaryPromises = Array.from(months).map(m => DataService.getMonthlySummary(collectionName, m));
+      const summaryResults = await Promise.all(summaryPromises);
+      
+      const combinedSummaries: any = {};
+      summaryResults.forEach(monthData => {
+         if(monthData) Object.assign(combinedSummaries, monthData);
       });
 
-      const match = key.match(/^(\d{4}-\d{2})/);
-      const targetMonth = match ? match[1] : currentMonthDocId;
-      const currentMonthData = StorageEngine.loadMonth(targetMonth);
-      currentMonthData[key] = tombstone;
-      StorageEngine.saveMonth(targetMonth, currentMonthData);
-      
-      if (isCloudEnabled) {
-          try {
-              const now = new Date().toISOString();
-              const targetDocId = key.match(/^(\d{4}-\d{2})/) ? key.substring(0, 7) : currentMonthDocId;
-              const ref = doc(db, 'production_data', targetDocId);
-              
-              await updateDoc(ref, { [`entries.${key}`]: tombstone, last_sync: now });
-              setLastSyncTime(new Date(now).toLocaleString());
-          } catch (e) { console.error("Delete sync failed", e); }
-      }
+      setCombinedData(prev => {
+          const newState = { ...prev };
 
-  }, [isCloudEnabled, currentMonthDocId]);
+          results.forEach(({ date, data: docData }) => {
+              const prevImDrafts = (newState[`${date}_IM`]?.rows || []).filter((r: any) => !r.machine || !r.product);
+              const prevBmDrafts = (newState[`${date}_BM`]?.rows || []).filter((r: any) => !r.machine || !r.product);
 
-  const toggleCloudSync = (enabled: boolean) => {
-      setIsCloudEnabled(enabled);
-      localStorage.setItem('fmj_cloud_enabled', String(enabled));
-      if (!enabled) setCloudStatus('disabled');
-  };
+              newState[`${date}_IM`] = docData.IM ? { ...docData.IM, rows: [...parseRows(docData.IM.rows), ...prevImDrafts] } : { rows: prevImDrafts };
+              newState[`${date}_BM`] = docData.BM ? { ...docData.BM, rows: [...parseRows(docData.BM.rows), ...prevBmDrafts] } : { rows: prevBmDrafts };
+              newState[`${date}_SUPERVISORS`] = docData.supervisors || {};
+          });
 
-  const updateAdminConfig = (newConfig: AdminConfig) => saveSpecificKey('adminConfig', newConfig);
-  const updateDayData = (key: string, newData: DayData) => saveSpecificKey(key, newData);
+          // 🟢 අදාළ දිනවලට අලුත් Summary දත්ත Set කිරීම
+          Object.keys(combinedSummaries).forEach(dateKey => {
+              newState[`${dateKey}_REPORT`] = combinedSummaries[dateKey];
+          });
 
-  const combinedData = useMemo(() => ({ ...activeData, adminConfig }), [activeData, adminConfig]);
+          return newState;
+      });
 
-  return {
-    combinedData,
-    adminConfig,
-    updateDayData,
-    updateAdminConfig,
-    deleteDayData: deleteSpecificKey,
-    isCloudEnabled,
-    toggleCloudSync,
-    cloudStatus,
+      loadedRangeRef.current = { start: startDate, end: endDate };
+  } catch (error) {
+      console.error("Error loading range data:", error);
+  }
+}, [collectionName]);
+
+
+
+
+
+
+  useEffect(() => {
+      return () => { Object.values(listenersRef.current).forEach(unsub => unsub()); };
+  }, []);
+
+  return { 
+    combinedData, 
+    adminConfig, 
+    updateDayData, 
+    updateAdminConfig, 
+    loadDataForRange, 
+    cloudStatus, 
+    lastSyncTime,
     localStatus,
-    lastSyncTime
+    isCloudEnabled: true, 
+    toggleCloudSync: () => {} 
   };
 };

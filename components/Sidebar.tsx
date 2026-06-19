@@ -2,9 +2,10 @@ import React from 'react';
 import { 
   Factory, LayoutDashboard, Activity, ChevronLeft, ChevronRight,
   TrendingUp, ClipboardCheck, UserCog, Cloud, CloudOff, RefreshCw,
-  Moon, Sun, HardDrive, CalendarClock, Truck
+  Moon, Sun, HardDrive, CalendarClock, Truck, LogOut, Warehouse // [NEW] LogOut Icon
 } from 'lucide-react';
 import { AppTab } from '../types';
+import { useAuth } from '../context/AuthContext'; // [NEW] Import Auth Hook
 
 interface SidebarProps {
   activeTab: AppTab;
@@ -33,6 +34,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen, 
   isDarkMode, setIsDarkMode, onOpenSyncModal, cloudStatus, localStatus, isCloudEnabled 
 }) => {
+  
+  // [NEW] Get logout function
+  const { logout } = useAuth();
+
   return (
     <aside className={`relative flex h-full flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B1121] transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64' : 'w-[70px]'} z-50 shadow-2xl`}>
         <button onClick={() => setIsSidebarOpen((v: boolean) => !v)} className={`absolute -right-3 top-6 z-50 rounded-full text-white p-1 shadow-lg hover:scale-110 transition-transform ring-4 ring-[#FAFAFA] dark:ring-[#020617] bg-indigo-600`}>
@@ -53,6 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <NavItem icon={<ClipboardCheck size={18} />} label="Quality" active={activeTab === AppTab.QUALITY} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.QUALITY)} color="text-emerald-500" />
           <NavItem icon={<CalendarClock size={18} />} label="Planning" active={activeTab === AppTab.PLANNING} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.PLANNING)} color="text-cyan-500" />
           <NavItem icon={<Truck size={18} />} label="Delivery" active={activeTab === AppTab.DELIVERY} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.DELIVERY)} color="text-orange-500" />
+          <NavItem icon={<Warehouse size={18} />} label="Stores" active={activeTab === AppTab.STORES} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.STORES)} color="text-blue-500" />
           <div className="my-3 border-t border-slate-100 dark:border-slate-800/50 mx-2 opacity-50 shrink-0"></div>
           <NavItem icon={<UserCog size={18} />} label="Admin" active={activeTab === AppTab.ADMIN} isOpen={isSidebarOpen} onClick={() => setActiveTab(AppTab.ADMIN)} color="text-rose-500" />
         </nav>
@@ -68,7 +74,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                {isSidebarOpen && (<div className="text-left flex-1 min-w-0 ml-1"><div className="text-[9px] font-black uppercase tracking-wider text-slate-400">System Status</div><div className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">{!isCloudEnabled ? 'Local Only' : cloudStatus === 'success' ? 'Fully Synced' : cloudStatus === 'syncing' ? 'Syncing...' : 'Offline'}</div></div>)}
             </div>
           </button>
+          
           <button onClick={() => setIsDarkMode((v: boolean) => !v)} className={`w-full flex items-center gap-3 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-95 ${!isSidebarOpen ? 'justify-center' : ''}`}><div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-amber-400">{isDarkMode ? <Moon size={14} /> : <Sun size={14} />}</div>{isSidebarOpen && <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{isDarkMode ? 'Dark' : 'Light'} Mode</span>}</button>
+          
+          {/* [NEW] LOGOUT BUTTON */}
+          <button onClick={logout} className={`w-full flex items-center gap-3 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all active:scale-95 ${!isSidebarOpen ? 'justify-center' : ''}`}>
+              <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 text-rose-500"><LogOut size={14} /></div>
+              {isSidebarOpen && <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Log Out</span>}
+          </button>
         </div>
       </aside>
   );

@@ -2,34 +2,82 @@ import React, { useState, useEffect } from 'react';
 import { AppTab, AdminConfig } from '../types';
 import SyncModal from './SyncModal';
 import { useProductionData } from '../hooks/useProductionData';
+import { UserData } from '../context/AuthContext';
 import { 
   LayoutDashboard, TrendingUp, Activity, ClipboardCheck, 
-  UserCog, Menu, CalendarClock, Truck, X, Factory, LogOut, Sun, Moon 
+  UserCog, Menu, CalendarClock, Truck, Warehouse, X, Factory, LogOut, Sun, Moon 
 } from 'lucide-react';
 
 // Tab Components
 import ProductionTab from './ProductionTab';
-import KPITab from './KPITab';
+import KPITab from './KPI/KPITab';
 import OEETab from './OEETab';
-import QualityTab from './QualityTab';
-import AdminTab from './AdminTab';
-import PlanningTab from './PlanningTab';
-import DeliveryTab from './DeliveryTab';
+import QualityTab from './QUALITY/QualityTab';
+import AdminTab from './ADMIN/AdminTab';
+import PlanningTab from './PLANNING/PlanningTab';
+import DeliveryTab from './DELIVERY/DeliveryTab';
+import StoresTab from './STORES/StoresTab';
 
-const MobileLayout: React.FC = () => {
+interface MobileLayoutProps {
+  user: UserData;
+}
+
+const MobileLayout: React.FC<MobileLayoutProps> = ({ user }) => {
   const [activeTab, setActiveTab] = useState(AppTab.KPI);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // ProductionTab එකේ තියෙන LocalStorage date එකම පාවිච්චි කරන්න
+  const [selectedDate, setSelectedDate] = useState(() => localStorage.getItem('fmj_entry_date') || new Date().toISOString().split('T')[0]);
+  
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const t = localStorage.getItem('theme'); return t === 'dark' || (!t && true); 
   });
 
-  // Load Custom Hook
   const { 
-    combinedData, adminConfig, updateDayData, updateAdminConfig, 
-    isCloudEnabled, toggleCloudSync, cloudStatus, localStatus, lastSyncTime 
-  } = useProductionData(selectedDate);
+    combinedData, 
+    adminConfig, 
+    updateDayData, 
+    updateAdminConfig, 
+    loadDataForRange, 
+ 
+    localStatus,       
+    isCloudEnabled,    
+    toggleCloudSync 
+  } = useProductionData(selectedDate, user.collectionName);
+
+  // ✅ [CRITICAL FIX] Tab එක මාරු වන විට දත්ත Auto Load වීම (Desktop එකේ වගේම)
+  useEffect(() => {
+    // Production Entry හෝ Admin Tab එකේදී මෙය අවශ්‍ය නැත (ඒවා දවසක් මත පදනම් වේ)
+    if (activeTab === AppTab.PRODUCTION || activeTab === AppTab.ADMIN) return;
+
+    // 🟢 Timezone දෝෂ රහිතව වර්තමාන මාසයේ දින පරාසය සෑදීම
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    
+    const startOfMonth = `${y}-${m}-01`;
+    const endDay = new Date(y, now.getMonth() + 1, 0).getDate();
+    const endOfMonth = `${y}-${m}-${String(endDay).padStart(2, '0')}`;
+
+    // Hook එක හරහා දත්ත ඉල්ලමු (Firebase + LocalStorage Merge වේ)
+    loadDataForRange(startOfMonth, endOfMonth);
+
+}, [activeTab, loadDataForRange]); 
+
+
+
+  // Date Sync Hack (ProductionTab එක වෙනස් නොකර වැඩ කරන්න)
+  useEffect(() => {
+    const handleStorageChange = () => {
+        const newDate = localStorage.getItem('fmj_entry_date');
+        if (newDate && newDate !== selectedDate) {
+            setSelectedDate(newDate);
+        }
+    };
+    const interval = setInterval(handleStorageChange, 1000); 
+    return () => clearInterval(interval);
+  }, [selectedDate]);
 
   useEffect(() => {
     if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); }
@@ -41,7 +89,6 @@ const MobileLayout: React.FC = () => {
       setIsMenuOpen(false); 
   };
 
-  // Menu Items Config
   const MENU_ITEMS = [
       { id: AppTab.PRODUCTION, label: 'Production Log', icon: LayoutDashboard, color: 'text-amber-500' },
       { id: AppTab.KPI, label: 'KPI Dashboard', icon: TrendingUp, color: 'text-indigo-500' },
@@ -49,6 +96,7 @@ const MobileLayout: React.FC = () => {
       { id: AppTab.QUALITY, label: 'Quality Control', icon: ClipboardCheck, color: 'text-emerald-500' },
       { id: AppTab.PLANNING, label: 'Planning', icon: CalendarClock, color: 'text-cyan-500' },
       { id: AppTab.DELIVERY, label: 'Delivery', icon: Truck, color: 'text-orange-500' },
+      { id: AppTab.STORES, label: 'Stores', icon: Warehouse, color: 'text-blue-500' },
       { id: AppTab.ADMIN, label: 'System Admin', icon: UserCog, color: 'text-rose-500' },
   ];
 
@@ -57,13 +105,10 @@ const MobileLayout: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-full bg-[#FAFAFA] text-slate-900 dark:bg-[#020617] dark:text-slate-100 font-sans overflow-hidden">
       
-      {/* 1. Mobile Header (Fixed Top) */}
+      {/* Mobile Header */}
       <div className="flex-none h-14 bg-white/90 dark:bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-3 z-30 shadow-sm">
          <div className="flex items-center gap-3">
-             <button 
-                onClick={() => setIsMenuOpen(true)} 
-                className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-600 dark:text-slate-300 active:scale-95 transition-transform"
-             >
+             <button onClick={() => setIsMenuOpen(true)} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-600 dark:text-slate-300 active:scale-95 transition-transform">
                  <Menu size={20} strokeWidth={2.5} />
              </button>
              <div>
@@ -72,16 +117,11 @@ const MobileLayout: React.FC = () => {
                  </h1>
              </div>
          </div>
-         <div className="flex items-center gap-2">
-            <button onClick={() => setIsSyncModalOpen(true)} className={`w-2.5 h-2.5 rounded-full ${localStatus === 'success' ? 'bg-emerald-500' : 'bg-amber-500'} animate-pulse ring-2 ring-emerald-500/20`}></button>
-         </div>
+         
       </div>
 
-      {/* 2. Slide-out Menu (Drawer) */}
-      <div 
-        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-        onClick={() => setIsMenuOpen(false)}
-      />
+      {/* Slide-out Menu */}
+      <div className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMenuOpen(false)} />
       
       <div className={`fixed inset-y-0 left-0 w-72 bg-white dark:bg-[#0B1121] z-50 shadow-2xl transform transition-transform duration-300 ease-out flex flex-col ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="h-16 flex items-center justify-between px-5 border-b border-slate-100 dark:border-slate-800">
@@ -104,15 +144,7 @@ const MobileLayout: React.FC = () => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
                   return (
-                      <button
-                          key={item.id}
-                          onClick={() => handleTabClick(item.id as AppTab)}
-                          className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all duration-200 ${
-                              isActive 
-                              ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-900' 
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-transparent'
-                          } border`}
-                      >
+                      <button key={item.id} onClick={() => handleTabClick(item.id as AppTab)} className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all duration-200 ${isActive ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-900' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-transparent'} border`}>
                           <Icon size={18} className={isActive ? item.color : 'text-slate-400'} />
                           <span className={`text-xs font-bold ${isActive ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                               {item.label}
@@ -124,10 +156,7 @@ const MobileLayout: React.FC = () => {
           </div>
 
           <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <button 
-                onClick={() => setIsDarkMode(!isDarkMode)}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 transition-transform"
-              >
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm active:scale-95 transition-transform">
                   <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-300 flex items-center gap-2">
                       {isDarkMode ? <Moon size={14}/> : <Sun size={14}/>}
                       {isDarkMode ? 'Dark Mode' : 'Light Mode'}
@@ -139,31 +168,79 @@ const MobileLayout: React.FC = () => {
           </div>
       </div>
 
-      {/* 3. Main Content Area - REDUCED PADDING TO p-2 */}
+      {/* Main Content Area */}
       <div className="flex-1 overflow-hidden relative">
-          <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-2 pb-20">
-              <div className="min-w-0 max-w-full">
-                  {activeTab === AppTab.PRODUCTION && <ProductionTab date={selectedDate} onDateChange={setSelectedDate} allData={combinedData} onUpdate={updateDayData} adminConfig={adminConfig} />}
-                  {activeTab === AppTab.KPI && <KPITab data={combinedData} />}
-                  {activeTab === AppTab.OEE && <OEETab data={combinedData} />}
-                  {activeTab === AppTab.QUALITY && <QualityTab data={combinedData} allData={combinedData} onUpdate={updateDayData} adminConfig={adminConfig} />}
-                  {activeTab === AppTab.PLANNING && <PlanningTab />}
-                  {activeTab === AppTab.DELIVERY && <DeliveryTab />}
-                  {activeTab === AppTab.ADMIN && <AdminTab config={adminConfig} onUpdate={updateAdminConfig} />}
-              </div>
-          </div>
-      </div>
+    <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-2 pb-20">
+        <div className="min-w-0 max-w-full">
+            
+            {/* 1. PRODUCTION TAB */}
+            {activeTab === AppTab.PRODUCTION && (
+              <ProductionTab 
+                  date={selectedDate} 
+                  allData={combinedData} 
+                  onUpdate={updateDayData} 
+                  adminConfig={adminConfig} 
+                  loadDataForRange={loadDataForRange} 
+              />
+            )}
 
-      <SyncModal 
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        isCloudEnabled={isCloudEnabled}
-        toggleCloudSync={toggleCloudSync}
-        cloudStatus={cloudStatus}
-        localStatus={localStatus}
-        lastSyncTime={lastSyncTime}
-        adminConfig={adminConfig}
-      />
+            {activeTab === AppTab.KPI && (
+                <KPITab 
+                    data={combinedData} 
+                    collectionName={user.collectionName} 
+                    onMonthChange={(monthStr) => {
+                        // 🟢 Timezone දෝෂ රහිතව මාසයේ දින පරාසය සෑදීම
+                        const [y, m] = monthStr.split('-');
+                        const startOfMonth = `${y}-${m}-01`;
+                        const endDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+                        const endOfMonth = `${y}-${m}-${String(endDay).padStart(2, '0')}`;
+                        
+                        loadDataForRange(startOfMonth, endOfMonth);
+                    }}
+                />
+            )}
+
+            {/* 3. OEE TAB */}
+            {/* 🟢 මෙතැනට loadDataForRange එකතු කළා */}
+            {activeTab === AppTab.OEE && <OEETab data={combinedData} loadDataForRange={loadDataForRange} />}
+            
+            {/* 4. QUALITY TAB */}
+            {activeTab === AppTab.QUALITY && (
+                <QualityTab 
+                  data={combinedData} 
+                  allData={combinedData} 
+                  onUpdate={updateDayData} 
+                  adminConfig={adminConfig} 
+                  loadDataForRange={loadDataForRange} // 🟢 මෙතැනටත් එකතු කළා
+                />
+            )}
+
+
+            
+            {/* 5. OTHER TABS */}
+            {activeTab === AppTab.PLANNING && <PlanningTab />}
+            {activeTab === AppTab.DELIVERY && <DeliveryTab />}
+            {activeTab === AppTab.STORES && <StoresTab />}
+            
+            {/* 6. ADMIN TAB */}
+            {activeTab === AppTab.ADMIN && (
+                <AdminTab 
+                    config={adminConfig} 
+                    onUpdate={updateAdminConfig} 
+                />
+            )}
+
+
+            
+            
+        </div>
+    </div>
+
+            
+
+</div>
+
+      
     </div>
   );
 };

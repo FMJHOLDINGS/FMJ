@@ -2,7 +2,11 @@ import { ProductionRow, DayData, Breakdown } from './types';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 // We keep this import if you rely on it elsewhere, otherwise it's optional for this file logic
-import { generateProductionReport } from './components/ExcelExportHelper';
+import { generateProductionReport } from './components/QUALITY/QalityExcelExport';
+
+// ============================================================================
+// ⏱️ 1. TIME CALCULATION HELPERS (කාලය ගණනය කිරීමේ උපකාරක)
+// ============================================================================
 
 export const parseMinutes = (timeStr: string): number | null => {
   if (!timeStr || !timeStr.includes(':')) return null;
@@ -21,6 +25,11 @@ export const calculateTimeDiff = (start: string, end: string): number => {
 
   return Math.max(0, e - s);
 };
+
+
+// ============================================================================
+// 📊 2. CORE METRICS CALCULATION (ප්‍රධාන දත්ත ගණනය කිරීම්)
+// ============================================================================
 
 export const calculateMetrics = (row: ProductionRow) => {
   const durationMins = calculateTimeDiff(row.startTime, row.endTime);
@@ -47,18 +56,14 @@ export const calculateMetrics = (row: ProductionRow) => {
     });
   }
 
-  // --- CALCULATIONS (All calculations preserved exactly) ---
+  // --- CALCULATIONS ---
+  // (🟢 Reject, Startup සහ Accepted Qty මෙතැනින් ඉවත් කර ඇත)
   const achievedQty = row.achievedQty || 0; 
-  const rejectionQty = row.rejectionQty || 0;
-  const startupQty = row.startupQty || 0;
-
-  const acceptedQty = achievedQty - rejectionQty - startupQty;
 
   const planQty = Math.floor(qtyPerHour * cavities * (durationMins / 60));
 
   const planKg = Number(((planQty * unitWeight) / 1000).toFixed(2));
   const achievedKg = Number(((achievedQty * unitWeight) / 1000).toFixed(2));
-  const acceptedKg = Number(((acceptedQty * unitWeight) / 1000).toFixed(2)); 
 
   const lostQty = planQty - achievedQty;
   const lostKg = Number(((lostQty * unitWeight) / 1000).toFixed(2));
@@ -76,10 +81,6 @@ export const calculateMetrics = (row: ProductionRow) => {
     planKg,
     achievedQty,
     achievedKg,
-    rejectionQty,
-    startupQty,
-    acceptedQty,
-    acceptedKg,
     lostQty,
     lostKg,
     bdMins,
@@ -91,18 +92,32 @@ export const calculateMetrics = (row: ProductionRow) => {
   };
 };
 
+
+// ============================================================================
+// 📅 3. DATE UTILITIES (දින සම්බන්ධ උපකාරක)
+// ============================================================================
+
 export const getDatesInRange = (startDate: string, endDate: string): string[] => {
   const dates: string[] = [];
-  const currDate = new Date(startDate);
-  const lastDate = new Date(endDate);
+  // 🟢 'Z' අකුර යෙදීමෙන් Local Time එක මඟහැර ලෝක වේලාව (UTC) ලබා ගනී
+  let currentDate = new Date(`${startDate}T00:00:00Z`); 
+  const lastDate = new Date(`${endDate}T00:00:00Z`);
 
-  while (currDate <= lastDate) {
-    dates.push(currDate.toISOString().split('T')[0]);
-    currDate.setDate(currDate.getDate() + 1);
+  while (currentDate <= lastDate) {
+    dates.push(currentDate.toISOString().split('T')[0]);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1); // 🟢 UTC දවස් පමණක් එකතු කරයි
   }
 
   return dates;
 };
+
+
+
+
+
+// ============================================================================
+// 📉 4. EXCEL EXPORTS: BREAKDOWN LOG (Breakdown දත්ත Excel කිරීම)
+// ============================================================================
 
 export const exportBreakdownsToExcel = async (
   data: any[],
@@ -180,6 +195,11 @@ export const exportBreakdownsToExcel = async (
   saveAs(blob, `Breakdown_Log_${dateRange.start}_to_${dateRange.end}.xlsx`);
 };
 
+
+// ============================================================================
+// 🏭 5. EXCEL EXPORTS: PRODUCTION REPORT (ප්‍රධාන දත්ත Excel කිරීම)
+// ============================================================================
+
 export const exportToExcel = async (
   rows: ProductionRow[],
   filters: { machine: string[]; product: string[]; startDate: string; endDate: string; type: string }
@@ -187,6 +207,7 @@ export const exportToExcel = async (
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Production Report');
   
+    // (🟢 Rej Qty, Start Qty, Acc Qty සහ Good Qty මෙතැනින් ඉවත් කර ඇත)
     worksheet.columns = [
       { header: 'Date', key: 'date', width: 12 },
       { header: 'Shift', key: 'shift', width: 8 },
@@ -194,12 +215,9 @@ export const exportToExcel = async (
       { header: 'Product', key: 'product', width: 30 },
       { header: 'Wt (g)', key: 'wt', width: 10 },
       { header: 'Plan Qty', key: 'planQty', width: 12 },
-      { header: 'Achv Qty', key: 'achvQty', width: 12 },
-      { header: 'Rej Qty', key: 'rejQty', width: 12 },
-      { header: 'Start Qty', key: 'startQty', width: 12 },
-      { header: 'Acc Qty', key: 'accQty', width: 12 },
+      { header: 'Gross Qty', key: 'achvQty', width: 12 },
       { header: 'Plan Kg', key: 'planKg', width: 12 },
-      { header: 'Achv Kg', key: 'achvKg', width: 12 },
+      { header: 'Gross Kg', key: 'achvKg', width: 12 },
       { header: 'Lost Qty', key: 'lostQty', width: 12 },
       { header: 'Lost Kg', key: 'lostKg', width: 12 },
     ];
@@ -207,28 +225,33 @@ export const exportToExcel = async (
     const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
     const headerFont: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true, size: 11 };
     const headerRow = worksheet.getRow(1);
-    headerRow.values = ['Date', 'Shift', 'Machine', 'Product', 'Wt(g)', 'Plan Qty', 'Gross Qty', 'Rej Qty', 'Start Qty', 'Good Qty', 'Plan Kg', 'Gross Kg', 'Lost Qty', 'Lost Kg'];
+    
+    headerRow.values = ['Date', 'Shift', 'Machine', 'Product', 'Wt(g)', 'Plan Qty', 'Gross Qty', 'Plan Kg', 'Gross Kg', 'Lost Qty', 'Lost Kg'];
     headerRow.eachCell((cell) => { cell.fill = headerFill; cell.font = headerFont; cell.alignment = { vertical: 'middle', horizontal: 'center' }; });
   
-    let tPlanQty = 0, tAchvQty = 0, tRejQty = 0, tStartQty = 0, tAccQty = 0, tPlanKg = 0, tAchvKg = 0, tLostQty = 0, tLostKg = 0;
+    let tPlanQty = 0, tAchvQty = 0, tPlanKg = 0, tAchvKg = 0, tLostQty = 0, tLostKg = 0;
   
     rows.forEach((row) => {
       const m = calculateMetrics(row);
-      tPlanQty += m.planQty; tAchvQty += row.achievedQty; tRejQty += row.rejectionQty || 0; tStartQty += row.startupQty || 0;
-      tAccQty += m.acceptedQty; tPlanKg += m.planKg; tAchvKg += m.achievedKg; tLostQty += m.lostQty; tLostKg += m.lostKg;
+      tPlanQty += m.planQty; 
+      tAchvQty += row.achievedQty; 
+      tPlanKg += m.planKg; 
+      tAchvKg += m.achievedKg; 
+      tLostQty += m.lostQty; 
+      tLostKg += m.lostKg;
   
       worksheet.addRow([
         (row as any).date || '', row.shift.toUpperCase(), row.machine, row.product, row.unitWeight,
-        m.planQty, row.achievedQty, row.rejectionQty || 0, row.startupQty || 0, m.acceptedQty,
+        m.planQty, row.achievedQty, 
         m.planKg, m.achievedKg, m.lostQty, m.lostKg
       ]);
     });
   
-    const totalRow = worksheet.addRow(['TOTAL', '', '', '', '', tPlanQty, tAchvQty, tRejQty, tStartQty, tAccQty, tPlanKg.toFixed(2), tAchvKg.toFixed(2), tLostQty, tLostKg.toFixed(2)]);
+    const totalRow = worksheet.addRow(['TOTAL', '', '', '', '', tPlanQty, tAchvQty, tPlanKg.toFixed(2), tAchvKg.toFixed(2), tLostQty, tLostKg.toFixed(2)]);
     totalRow.eachCell((cell) => { cell.font = { bold: true }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; cell.alignment = { horizontal: 'right' }; cell.border = { top: { style: 'double' }, bottom: { style: 'thick' } }; });
     
+    // (A සිට E දක්වා Merge කිරීම)
     worksheet.mergeCells(`A${totalRow.number}:E${totalRow.number}`);
-    
     worksheet.getCell(`A${totalRow.number}`).alignment = { horizontal: 'center', vertical: 'middle' };
   
     const buffer = await workbook.xlsx.writeBuffer();
@@ -236,11 +259,13 @@ export const exportToExcel = async (
     saveAs(blob, `Production_Report_${filters.type}.xlsx`);
 };
 
-// --- NEW FUNCTION ADDED FOR TEMPLATE DOWNLOAD ---
-// මෙය භාවිතා කිරීමෙන් Error එක නැති වී Template එක Download වේ.
+
+// ============================================================================
+// 📂 6. TEMPLATE DOWNLOAD (Excel Template එක Download කිරීම)
+// ============================================================================
+
 export const downloadTemplate = async () => {
   try {
-    // CORRECT PATH for GitHub Pages / Public Folder
     const response = await fetch('./template/report_template.xlsx');
     
     if (!response.ok) {

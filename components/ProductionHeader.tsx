@@ -11,6 +11,7 @@ interface Props {
   handleSupervisorChange: (val: string) => void;
   showSwapNotice: boolean;
   handleSwapNow: () => void;
+  readOnly?: boolean;
 }
 
 const ProductionHeader: React.FC<Props> = ({
@@ -21,7 +22,8 @@ const ProductionHeader: React.FC<Props> = ({
   displaySup,
   handleSupervisorChange,
   showSwapNotice,
-  handleSwapNow
+  handleSwapNow,
+  readOnly
 }) => {
   return (
     <div className="bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 py-1.5 px-4 w-full flex justify-center transition-colors duration-300">
@@ -44,12 +46,13 @@ const ProductionHeader: React.FC<Props> = ({
             <UserCheck className={`w-3.5 h-3.5 ${activeShift === 'day' ? 'text-amber-500' : 'text-indigo-500'}`} />
           </div>
           <select 
+            disabled={readOnly}
             value={displaySup} 
-            onChange={(e) => handleSupervisorChange(e.target.value)} 
-            className="pl-7 pr-6 py-1 h-full text-[10px] md:text-xs font-bold uppercase rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm focus:border-indigo-500 outline-none appearance-none cursor-pointer min-w-[100px]"
+            onChange={(e) => handleSupervisorChange(e.target.value)}
+            className={`w-full bg-transparent text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider outline-none appearance-none pl-8 pr-6 py-1.5 dark:[color-scheme:dark] ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
           >
-            <option value="Shift-A">Shift-A</option>
-            <option value="Shift-B">Shift-B</option>
+            <option value="Shift-A" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold">Shift-A</option>
+            <option value="Shift-B" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold">Shift-B</option>
           </select>
           <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
         </div>
@@ -71,7 +74,7 @@ const ProductionHeader: React.FC<Props> = ({
         </div>
 
         {/* 4. SWAP BUTTON (Conditional) */}
-        {showSwapNotice && (
+        {!readOnly && showSwapNotice && (
           <button 
             onClick={handleSwapNow} 
             className="px-3 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-black uppercase flex items-center gap-1 shadow-md animate-pulse"

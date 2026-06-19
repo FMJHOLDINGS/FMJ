@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Activity, TrendingUp, ClipboardCheck, 
-  UserCog, CalendarClock, Truck, Clock 
+  UserCog, CalendarClock, Truck, Clock, RefreshCw // 🟢 RefreshCw අලුතින් එක් කළා
 } from 'lucide-react';
 import { AppTab } from '../types';
+
+
+
 
 const DigitalClock = () => {
     const [time, setTime] = useState(new Date());
@@ -18,7 +21,9 @@ const DigitalClock = () => {
     );
 };
 
-const Header: React.FC<{ activeTab: AppTab }> = ({ activeTab }) => {
+
+
+const Header: React.FC<{ activeTab: AppTab; onRefresh?: () => void }> = ({ activeTab, onRefresh }) => {
   const getActiveColor = (tab: AppTab) => {
     switch (tab) {
         case AppTab.PRODUCTION: return 'text-amber-500';
@@ -32,9 +37,12 @@ const Header: React.FC<{ activeTab: AppTab }> = ({ activeTab }) => {
     }
   };
 
+
+
+
   const titleText = {
     [AppTab.PRODUCTION]: 'Production Log', [AppTab.KPI]: 'KPI Dashboard', [AppTab.OEE]: 'OEE Analytics',
-    [AppTab.QUALITY]: 'Quality Control', [AppTab.PLANNING]: 'Production Planning', [AppTab.DELIVERY]: 'Delivery Schedule', [AppTab.ADMIN]: 'System Admin'
+    [AppTab.QUALITY]: 'Quality Control', [AppTab.PLANNING]: 'Production Planning', [AppTab.DELIVERY]: 'Delivery Schedule', [AppTab.ADMIN]: 'System Admin',
   }[activeTab];
 
   return (
@@ -43,7 +51,20 @@ const Header: React.FC<{ activeTab: AppTab }> = ({ activeTab }) => {
             <div><h1 className={`text-base font-black dark:text-white uppercase tracking-tight flex items-center gap-2 ${getActiveColor(activeTab)}`}>
                 {activeTab === AppTab.QUALITY && <ClipboardCheck className="w-5 h-5"/>}{activeTab === AppTab.PRODUCTION && <LayoutDashboard className="w-5 h-5"/>}{activeTab === AppTab.KPI && <TrendingUp className="w-5 h-5"/>}{activeTab === AppTab.OEE && <Activity className="w-5 h-5"/>}{activeTab === AppTab.PLANNING && <CalendarClock className="w-5 h-5"/>}{activeTab === AppTab.DELIVERY && <Truck className="w-5 h-5"/>}{activeTab === AppTab.ADMIN && <UserCog className="w-5 h-5"/>}{titleText}</h1></div>
         </div>
-        <div className="flex items-center gap-4"><DigitalClock /></div>
+        <div className="flex items-center gap-4">
+            {/* 🟢 Refresh බොත්තම */}
+            {onRefresh && (
+                <button 
+                    onClick={onRefresh} 
+                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-indigo-500 transition-all active:rotate-180 duration-500" 
+                    title="Refresh Data from Server"
+                >
+                    <RefreshCw size={18} />
+                </button>
+            )}
+            <DigitalClock />
+        </div>
+        
     </header>
   );
 };

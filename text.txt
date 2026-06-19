@@ -1,0 +1,28 @@
+npx tree-node-cli -I "node_modules|.git|dist|build" > structure.txt
+
+
+අනික කිසිම low performance device එකක ලැග් වෙන්නෙ නැති වෙන්න හදන්න. ඔනෙ නම් hardware use කරන්න.
+අනික මෙහි ඇති සියලුම colors පහසුවෙන් වෙනස් කල හැකි පරිදි කොඩ් එකේ උඩින්ම config කොටසක් හදලා දාන්න.
+අනික පොඩි mobile screen වලදි චාට් එක පෙන්වන්න ඉඩ මදිනම් horizontal scroll bar දාන්න.
+අනික කොඩ් එක කොටස් වලට පැහැදිලිව වෙන් කරලා comment දාලා පැහැදිලිව හදන්න ලේසියෙන්ම ඔනම කොටසක් වෙනස් කරගන්න පුලුවන් වෙන්න.
+
+මට මෙ ටික හරියටම හදලා දෙන්න බලන්න.
+
+
+
+
+// 🟢 වෙනස 1: material වෙනුවට productType ලෙස සේව් වීමට
+            productType: 'Preform', materialPercent: 0, mbCode: '', mbPercent: 0, crushPercent: 0
+
+
+මෙ දෙක හොදට බලන්නකො.
+
+මෙකේ IM පැත්තට එක විදිහකුයි BM පැත්තට තව විදිහකුයිනෙ තියෙන්නෙ.
+
+මට ඔනේ IM ටැබ් එක තියෙනවා වගේම BM tab එකත් හදාගන්න.
+
+
+
+
+
+එ සදහා මම වෙනස් කල යුතු කෝඩ් කොටස කුමක්ද

@@ -1,50 +1,81 @@
-import React, { useState, useEffect } from 'react';
-import DesktopLayout from './components/DesktopLayout';
-import MobileLayout from './components/MobileLayout';
+import React, { useEffect } from 'react';
+// AuthContext එකෙන් ලොග් වී ඇති අයගේ විස්තර ලබා ගනී
+import { useAuth, AuthProvider } from './context/AuthContext';
 
-const App: React.FC = () => {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [zoomLevel, setZoomLevel] = useState(1);
+// [NEW IMPORTS] Auto Logout සඳහා අවශ්‍ය Firebase කොටස්
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db, auth } from './firebase';
+import { signOut } from 'firebase/auth';
 
-  // --- SMART ZOOM LOGIC ---
+// --- COMPONENTS IMPORTS ---
+import AuthPage from './context/AuthPage'; // ලොග් වීමේ පිටුව
+import Dashboard from './context/Dashboard'; // සාමාන්‍ය Factory Dashboard එක
+import SuperAdminDashboard from './Dashboard/SuperAdminDashboard'; // [NEW] අලුත් Super Admin Dashboard එක
+
+const AppContent = () => {
+  // context එක හරහා දැනට ලොග් වී ඇති User (userData) සහ Loading තත්වය ලබා ගනී
+  const { userData, loading } = useAuth();
+
+  // ---------------------------------------------------------------------------
+  // [NEW LOGIC] SECURITY LISTENER 🛡️ (Auto Logout when User Deleted)
+  // ඔබ ඉල්ලූ පරිදි Factory එක Delete කළ විට User ව Auto Logout කරන කොටස
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const handleResize = () => {
-      const width = window.innerWidth;
+    // 1. User කෙනෙක් ඉන්නවාද?
+    // 2. එයා Super Admin නොවේද? (Super Admin ව check කරන්න අවශ්‍ය නෑ)
+    if (userData?.id && userData.role !== 'super_admin') {
       
-      let newZoom = 1.0; // Default 100%
+      // Database එකේ එම User ගේ Document එක දෙස බලා සිටී (Real-time)
+      const unsub = onSnapshot(doc(db, "users", userData.id), (docSnap) => {
+        // යම් හෙයකින් Document එක මැකුණොත් (Factory Delete කළ විට)
+        if (!docSnap.exists()) {
+          console.warn("User account deleted. Logging out...");
+          // Firebase Auth එකෙන් Sign Out කරවයි
+          signOut(auth).then(() => {
+            localStorage.clear(); // Browser එකේ Save වී ඇති දත්ත මකයි
+            window.location.reload(); // Page එක Refresh කරයි (Login එකට යයි)
+          });
+        }
+      }, (error) => {
+          console.log("Auth Check Error (Ignored):", error);
+      });
+      return () => unsub(); // Cleanup
+    }
+  }, [userData]);
 
-      if (width <= 480) {
-          // කුඩා ෆෝන් සඳහා: 85% (15% reduction)
-          // මෙය මගින් තිරයේ වැඩි විස්තර ප්‍රමාණයක් පෙන්වයි.
-          newZoom = 0.85; 
-      } else if (width <= 1024) {
-          // ටැබ්ලට් සහ ලොකු ෆෝන්: 90% (10% reduction)
-          newZoom = 0.90;
-      } else if (width <= 1440) {
-          // ලැප්ටොප්: 95% (5% reduction)
-          newZoom = 0.95;
-      } else {
-          // ලොකු මොනිටර්: 100% (No reduction)
-          newZoom = 1.0;
-      }
+  // 1. LOADING STATE (පූරණය වෙමින් පවතී නම්)
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
-      setZoomLevel(newZoom);
-      setIsMobile(width < 768);
-    };
+  // 2. NO USER (ලොග් වී නැත්නම්)
+  if (!userData) {
+    return <AuthPage />;
+  }
 
-    window.addEventListener('resize', handleResize);
-    handleResize(); // Initial call
+  // 3. SUPER ADMIN CHECK (විශේෂ පරීක්ෂාව) 🔐
+  if (userData.role === 'super_admin') {
+      return <SuperAdminDashboard />;
+  }
 
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  // 4. NORMAL USER (සාමාන්‍ය පරිශීලකයා)
   return (
-    // මුළු ඇප් එකම මෙම div එක තුල zoom වේ
-    // (any) type casting භාවිතා කර ඇත්තේ zoom property එක TS වල සම්මත නොවන නිසාය
-    <div style={{ zoom: zoomLevel, width: '100%', height: '100%' } as any}>
-       {isMobile ? <MobileLayout /> : <DesktopLayout />}
-    </div>
+    <Dashboard 
+      user={userData} 
+    />
   );
 };
 
-export default App;
+// Main App Component
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+

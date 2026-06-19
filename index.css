@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Tailwind v4 වලදී Dark Mode එක Class එකක් මගින් 
+   පාලනය කරන්න පහත පේළිය අනිවාර්යයෙන්ම එක් කළ යුතුයි. 
+*/
+@variant dark (&:where(.dark, .dark *));
+

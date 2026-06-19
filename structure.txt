@@ -1,0 +1,144 @@
+production-app
+├── App.tsx
+├── Dashboard
+│   ├── SA_Breakdowns.tsx
+│   ├── SA_DashboardOverview.tsx
+│   ├── SA_FactoryManager.tsx
+│   ├── SA_OEE.tsx
+│   ├── SA_ProDetailedView.tsx
+│   ├── SA_Production.tsx
+│   ├── SA_SimpleView.tsx
+│   └── SuperAdminDashboard.tsx
+├── KPITypes.ts
+├── README.md
+├── components
+│   ├── ADMIN
+│   │   ├── AdmBreakdownsAdd.tsx
+│   │   ├── AdminItemAdd.tsx
+│   │   ├── AdminQaDefectsAdd.tsx
+│   │   ├── AdminRegisterUser.tsx
+│   │   ├── AdminTab.tsx
+│   │   ├── AdminTeamsAdd.tsx
+│   │   ├── AdminUISettings.tsx
+│   │   ├── SmartMigration.tsx
+│   │   └── StorageManager.tsx
+│   ├── BreakdownExcelExport.tsx
+│   ├── BreakdownLog.tsx
+│   ├── BreakdownModal.tsx
+│   ├── BreakdownSummary.tsx
+│   ├── BreakdownSummaryExcel.ts
+│   ├── DELIVERY
+│   │   └── DeliveryTab.tsx
+│   ├── DailyReportExporter.ts
+│   ├── DailySummary.tsx
+│   ├── DailySummaryView.tsx
+│   ├── DatabaseView.tsx
+│   ├── DesktopLayout.tsx
+│   ├── Header.tsx
+│   ├── ImBmDBExcel.ts
+│   ├── KPI
+│   │   ├── KPIPvsAExcelExport.ts
+│   │   ├── KPIPvsALojic.tsx
+│   │   ├── KPIPvsAView.tsx
+│   │   ├── KPITab.tsx
+│   │   ├── KPI_Absenteeism.tsx
+│   │   ├── KPI_Dashboard.tsx
+│   │   ├── KPI_Electricity.tsx
+│   │   ├── KPI_Rejections.tsx
+│   │   ├── KPI_Summary.tsx
+│   │   ├── KPI_Water.tsx
+│   │   ├── LaborProdLogic.tsx
+│   │   ├── LaborProdUiView.tsx
+│   │   ├── useAbsenteeismLogic.ts
+│   │   ├── useElectricityLogic.ts
+│   │   ├── useRejectionsLogic.ts
+│   │   └── useWaterLogic.ts
+│   ├── MachineAnalytics.tsx
+│   ├── MobileLayout.tsx
+│   ├── Monthly Production Report
+│   │   ├── MonthlyDataTable.tsx
+│   │   ├── MonthlyDetailedView.tsx
+│   │   ├── MonthlyParetoCharts.tsx
+│   │   ├── MonthlyProduction.tsx
+│   │   ├── MonthlyProductionExcel.ts
+│   │   └── useMonthlyLogic.ts
+│   ├── MultiSelectDropdown.tsx
+│   ├── OEETab.tsx
+│   ├── PLANNING
+│   │   ├── CompletedPlanView.tsx
+│   │   ├── DailyPlanView.tsx
+│   │   ├── ExportExcelUtils.ts
+│   │   ├── PlanIMLogic.ts
+│   │   ├── PlanIMView.tsx
+│   │   ├── PlanModals.tsx
+│   │   ├── PlanTableComponents.tsx
+│   │   ├── Plan_BM.tsx
+│   │   ├── PlanningService.ts
+│   │   ├── PlanningSummary.tsx
+│   │   ├── PlanningTab.tsx
+│   │   ├── PlanningTypes.ts
+│   │   ├── ProductDB.tsx
+│   │   ├── ProductDBLogic.ts
+│   │   └── usePlanningManager.ts
+│   ├── ProductionHeader.tsx
+│   ├── ProductionTab.tsx
+│   ├── ProductionTable.tsx
+│   ├── QUALITY
+│   │   ├── QaService.ts
+│   │   ├── QalityExcelExport.ts
+│   │   ├── QualityAnalysis.tsx
+│   │   ├── QualityDataEntry.tsx
+│   │   ├── QualityTab.tsx
+│   │   ├── useQaManager.ts
+│   │   └── useQualityAnalysisLogic.ts
+│   ├── STORES
+│   │   ├── AddEditItemModal.tsx
+│   │   ├── ConfirmModal.tsx
+│   │   ├── InTransactionModal.tsx
+│   │   ├── OutTransactionModal.tsx
+│   │   ├── ReturnTransactionModal.tsx
+│   │   ├── StockCategoryView.tsx
+│   │   ├── StoreConfig.ts
+│   │   ├── StoreSummary.tsx
+│   │   ├── StoresService.ts
+│   │   ├── StoresTab.tsx
+│   │   ├── StoresTypes.ts
+│   │   ├── TransactionModal.tsx
+│   │   └── useStoresManager.ts
+│   ├── Sidebar.tsx
+│   └── SyncModal.tsx
+├── context
+│   ├── AuthContext.tsx
+│   ├── AuthPage.tsx
+│   ├── Dashboard.tsx
+│   ├── SimpleSpaceBackground.tsx
+│   └── useAuthLogic.ts
+├── firebase.json
+├── firebase.ts
+├── hooks
+│   ├── useKpiManager.ts
+│   └── useProductionData.ts
+├── index.css
+├── index.html
+├── index.tsx
+├── metadata.json
+├── mobile-view
+├── package-lock.json
+├── package.json
+├── public
+│   ├── Fmj_Icon.png
+│   ├── Fmj_Icon.svg
+│   ├── OLDPRODUCTION REPORT.xlsx
+│   └── template
+│       ├── monthly_template.xlsx
+│       ├── report_template.xlsx
+│       └── report_template1.xlsx
+├── services
+│   ├── DataService.ts
+│   └── KpiService.ts
+├── structure.txt
+├── text.txt
+├── tsconfig.json
+├── types.ts
+├── utils.ts
+└── vite.config.ts

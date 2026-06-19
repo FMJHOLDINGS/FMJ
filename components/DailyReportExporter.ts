@@ -1,6 +1,8 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
+
+
 // --- CONSTANTS & CONFIGURATIONS ---
 export const EXCEL_CONFIG = {
   dateCell: 'B1',
@@ -31,8 +33,9 @@ export const EXCEL_CONFIG = {
     night: { im_mc: 'E28', im_tot: 'J28', bm_mc: 'E29', bm_tot: 'J29' },
     today: { im_mc: 'E30', im_tot: 'J30', bm_mc: 'E31', bm_tot: 'J31' }
   },
-  att1: { startRow: 5, colActual: 'O', colPresent: 'R', colAbsent: 'U' },
-  att2: { startRow: 5, colActual: 'AB', colPresent: 'AE', colAbsent: 'AH' },
+  att1: { dateCell: 'L4', startRow: 5, colActual: 'O', colPresent: 'R', colAbsent: 'U' },
+  att2: { dateCell: 'Y4', startRow: 5, colActual: 'AB', colPresent: 'AE', colAbsent: 'AH' },
+  
   stock: { startRow: 18, colMonthOpen: 'P', colRVD: 'S', colRVDTotal: 'V', colIssue: 'Y', colIssuedTotal: 'AB', colStock: 'AE' },
   delivery: {
     im: { actual: 'S26', mtd: 'Z26' },
@@ -65,12 +68,12 @@ export const downloadDailyReportExcel = async (
     try {
       // Correct Path for Template
       // ඔබේ Repo එකේ නම 'FMJ' නම්:
-const response = await fetch('/FMJ/template/report_template.xlsx');
+const response = await fetch('./template/report_template.xlsx');
       
       if (!response.ok) throw new Error("Template Not Found!");
       const buffer = await response.arrayBuffer();
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer);npm
+      await wb.xlsx.load(buffer);
       const ws = wb.worksheets[0];
 
       ws.getCell(EXCEL_CONFIG.dateCell).value = selDate;
@@ -98,13 +101,26 @@ const response = await fetch('/FMJ/template/report_template.xlsx');
       ws.getCell(C_SHIFT.shiftB.mtd).value = data.shift.b.pct / 100;
 
       const fillAtt = (conf: any, attData: any) => {
+        // 🟢 Attendance Date එක අදාළ Cell එකට යැවීම
+        if (conf.dateCell && attData.date) {
+          ws.getCell(conf.dateCell).value = attData.date;
+        }
+
         ATT_KEYS.forEach((k, i) => {
           const r = conf.startRow + i;
+          
+          // 'req' අගය O12 (හෝ AB12) වෙත ලියවෙන්නේ මෙතැනිනි
           ws.getCell(`${conf.colActual}${r}`).value = attData[k].a;
-          ws.getCell(`${conf.colPresent}${r}`).value = attData[k].p;
-          ws.getCell(`${conf.colAbsent}${r}`).value = attData[k].ab;
+          
+          // 🟢 req සහ balance පේළි Merge කර ඇති බැවින්, ඒවායේ අනිත් තීරු වලට ලිවීම නැවැත්වීම
+          if (k !== 'req' && k !== 'balance') {
+            ws.getCell(`${conf.colPresent}${r}`).value = attData[k].p;
+            ws.getCell(`${conf.colAbsent}${r}`).value = attData[k].ab;
+          }
         });
       };
+
+
       fillAtt(EXCEL_CONFIG.att1, att1);
       fillAtt(EXCEL_CONFIG.att2, att2);
 
