@@ -8,7 +8,7 @@ export default function AutoUpdater() {
   const [isFinished, setIsFinished] = useState(false);
 
   useEffect(() => {
-    // මේකෙන් කරන්නේ .exe එකක් ඇතුළේ ඉන්නවා නම් විතරක් Update එකක් තියෙනවද බලන එකයි
+    // ඇප් එක ඕපන් කරපු ගමන් Update එකක් තියෙනවද බලනවා
     if ((window as any).__TAURI_INTERNALS__) {
       checkForUpdates();
     }
@@ -19,7 +19,7 @@ export default function AutoUpdater() {
       const update = await check();
       if (update) {
         setUpdateInfo(update);
-        setUpdateAvailable(true);
+        setUpdateAvailable(true); // Update එකක් ඇවිත් නම් තිරය වසා දමයි
       }
     } catch (error) {
       console.error("Update check failed:", error);
@@ -30,58 +30,61 @@ export default function AutoUpdater() {
     if (!updateInfo) return;
     setIsUpdating(true);
     try {
-      // අප්ඩේට් එක ඩවුන්ලෝඩ් කරලා ඉන්ස්ටෝල් කරන කමාන්ඩ් එක
+      // ඩවුන්ලෝඩ් කර ඉන්ස්ටෝල් කිරීම අරඹයි
       await updateInfo.downloadAndInstall();
       setIsUpdating(false);
-      setIsFinished(true); 
+      setIsFinished(true);
+      // සාමාන්‍යයෙන් Tauri මෙතැනදී ඉබේම ඇප් එක Restart කරයි
     } catch (error) {
       console.error("Update failed:", error);
       setIsUpdating(false);
     }
   }
 
-  // අප්ඩේට් එකක් නැත්නම් මුකුත් පෙන්වන්න එපා
+  // Update එකක් නැත්නම් මුකුත් පෙන්වන්නේ නැතිව සාමාන්‍ය විදිහට ඇප් එක වැඩ කරයි
   if (!updateAvailable) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 bg-white p-6 rounded-lg shadow-2xl border border-gray-200 z-[9999] w-80">
-      {!isFinished ? (
-        <>
-          <h3 className="text-lg font-bold text-gray-800 mb-2">අලුත් Update එකක් ඇත! 🎉</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            FMJ Pro හි <b>{updateInfo?.version}</b> සංස්කරණය දැන් ලබා ගත හැක. අලුත් පහසුකම් සඳහා දැන්ම Update කරගන්න.
-          </p>
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={() => setUpdateAvailable(false)}
-              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
-              disabled={isUpdating}
-            >
-              පසුවට
-            </button>
+    // මුළු තිරයම අඳුරු කර වෙනත් කිසිම දෙයක් ක්ලික් කරන්න බැරි වෙන විදිහට Overlay එකක් සෑදීම
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+        {!isFinished ? (
+          <>
+            <div className="mb-4">
+              <span className="text-5xl">🚀</span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">අනිවාර්ය Update එකක් ඇත!</h3>
+            <p className="text-sm text-gray-600 mb-8">
+              සිස්ටම් එකේ ආරක්ෂාව සහ නව පහසුකම් සඳහා <b>{updateInfo?.version}</b> සංස්කරණයට අනිවාර්යයෙන්ම Update කළ යුතුයි. කරුණාකර පහත Button එක click කරන්න.
+            </p>
+            
+            {/* මෙහි Cancel Button එකක් නොමැත. ඇත්තේ Update Button එක පමණි */}
             <button
               onClick={startUpdate}
               disabled={isUpdating}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="w-full py-3 px-4 text-base font-bold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-wait transition-all shadow-lg hover:shadow-blue-600/30"
             >
-              {isUpdating ? 'Downloading...' : 'දැන් Install කරන්න'}
+              {isUpdating ? 'Downloading & Installing...' : 'දැන්ම Update කරන්න'}
             </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <h3 className="text-lg font-bold text-green-600 mb-2">Update එක සාර්ථකයි! ✅</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            අලුත් සංස්කරණය සාර්ථකව Install විය. වෙනස්කම් බලාගැනීම සඳහා කරුණාකර ඇප් එක Close කර නැවත Open කරන්න.
-          </p>
-          <button
-            onClick={() => setUpdateAvailable(false)}
-            className="w-full px-4 py-2 text-sm bg-gray-800 text-white rounded hover:bg-gray-900"
-          >
-            හරි (OK)
-          </button>
-        </>
-      )}
+            
+            {isUpdating && (
+              <p className="text-xs text-gray-500 mt-4 animate-pulse">
+                කරුණාකර රැඳී සිටින්න. මෙය ස්වයංක්‍රීයව සිදුවේ...
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="mb-4">
+              <span className="text-5xl">✅</span>
+            </div>
+            <h3 className="text-xl font-bold text-green-600 mb-2">Update එක සාර්ථකයි!</h3>
+            <p className="text-sm text-gray-600">
+              අලුත් සංස්කරණය සාර්ථකව Install විය. මෘදුකාංගය දැන් ස්වයංක්‍රීයව නැවත Open වේවි. එසේ නොවුණහොත් කරුණාකර ඇප් එක Close කර නැවත Open කරන්න.
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }
